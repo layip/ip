@@ -285,6 +285,8 @@ if (isset($_GET['admin'])) {
     body { background: var(--deep); color: var(--dim); font-family: 'Inter'; }
     .tab-content { display: none !important; } .tab-content.active { display: block !important; animation: fadeIn 0.3s ease; }
     .tab-content#t1.active { display: grid !important; }
+    .link-pane { display: none; } .link-pane.active { display: block; animation: fadeIn 0.2s ease; }
+    .link-subtab.active { background: #0891b2; color: #fff; border-color: #22d3ee; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .card { background: var(--card); border: 1px solid #1e293b; border-radius: 2rem; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
     input, textarea { background: black; border: 1px solid #1e293b; padding: 1rem; border-radius: 0.75rem; color: white; width: 100%; outline: none; }
@@ -395,10 +397,22 @@ if (isset($_GET['admin'])) {
 
 
         <div id="t7" class="tab-content max-w-6xl mx-auto space-y-8">
-            <div class="grid lg:grid-cols-3 gap-8">
-                <div class="card space-y-4 shadow-2xl lg:col-span-2">
-                    <h3 class="text-cyan-500 italic uppercase">🧭 QUẢN LÝ LINK: CHUYỂN HƯỚNG + NỘI BỘ</h3>
-                    <p class="text-[8px] text-slate-400 normal-case italic">Một nơi để sửa nội dung chia sẻ Messenger/Zalo/website, xem trước meta, tạo link nội bộ <code>?v=ID</code>, và cấu hình link đích chuyển hướng.</p>
+            <div class="card space-y-4 shadow-2xl">
+                <h3 class="text-cyan-500 italic uppercase">🧭 QUẢN LÝ LINK: CHUYỂN HƯỚNG + NỘI BỘ</h3>
+                <p class="text-[8px] text-slate-400 normal-case italic">Chia thành 5 cột tab để quản lý nhanh: sửa nội dung chia sẻ, xem trước, rút gọn link nội bộ, tạo lại từ link form hiện tại, và gợi ý cấu hình hợp lệ.</p>
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-2">
+                    <button type="button" onclick="linkSubTab('share',this)" class="link-subtab active border border-slate-700 bg-slate-900 text-cyan-300 py-3 rounded-xl font-black uppercase text-[8px]">1. Nội dung chia sẻ</button>
+                    <button type="button" onclick="linkSubTab('preview',this)" class="link-subtab border border-slate-700 bg-slate-900 text-cyan-300 py-3 rounded-xl font-black uppercase text-[8px]">2. Xem trước</button>
+                    <button type="button" onclick="linkSubTab('short',this)" class="link-subtab border border-slate-700 bg-slate-900 text-cyan-300 py-3 rounded-xl font-black uppercase text-[8px]">3. Rút gọn link nội bộ</button>
+                    <button type="button" onclick="linkSubTab('rebuild',this)" class="link-subtab border border-slate-700 bg-slate-900 text-cyan-300 py-3 rounded-xl font-black uppercase text-[8px]">4. Tạo lại từ link form hiện tại</button>
+                    <button type="button" onclick="linkSubTab('preset',this)" class="link-subtab border border-slate-700 bg-slate-900 text-cyan-300 py-3 rounded-xl font-black uppercase text-[8px]">5. Gợi ý cấu hình hợp lệ</button>
+                </div>
+            </div>
+
+            <div id="link-pane-share" class="link-pane active">
+                <div class="card space-y-4 shadow-2xl">
+                    <h3 class="text-cyan-500 italic uppercase">1) SỬA NỘI DUNG CHIA SẺ MESSENGER / ZALO / WEBSITE</h3>
+                    <p class="text-[8px] text-slate-400 normal-case italic">Sửa ID, link đích, tiêu đề, mô tả và ảnh chia sẻ tại đây; preview sẽ tự cập nhật ở tab Xem trước.</p>
                     <div class="grid md:grid-cols-2 gap-3">
                         <input id="safe_lid" oninput="updateSharePreview()" placeholder="ID link, ví dụ: tin-cong-khai">
                         <input id="safe_redir" oninput="updateSharePreview()" placeholder="URL đích hợp lệ, ví dụ: https://example.com/bai-viet">
@@ -414,54 +428,55 @@ if (isset($_GET['admin'])) {
                     <input id="managed_link_url" readonly class="text-cyan-300 font-mono text-[8px]" placeholder="Link nội bộ vừa tạo sẽ hiện ở đây">
                     <p id="managed_status" class="text-[10px] text-slate-300 normal-case"></p>
                 </div>
-                <div class="card space-y-4">
-                    <h3 class="text-white uppercase italic">Gợi ý cấu hình hợp lệ</h3>
-                    <button type="button" onclick="presetSafe('newsletter')" class="btn-pro bg-slate-800">Bản tin của tôi</button>
-                    <button type="button" onclick="presetSafe('campaign')" class="btn-pro bg-slate-800">Trang chiến dịch công khai</button>
-                    <button type="button" onclick="presetSafe('notice')" class="btn-pro bg-slate-800">Thông báo chuyển hướng</button>
-                    <p class="text-[8px] text-amber-400 normal-case italic">Nội dung chia sẻ nên là nội dung bạn sở hữu hoặc được phép dùng; hệ thống tạo link nội bộ, không gọi is.gd/dịch vụ rút gọn bên ngoài.</p>
+            </div>
+
+            <div id="link-pane-preview" class="link-pane">
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <div class="card p-6 shadow-2xl text-center">
+                        <p class="text-slate-500 mb-4 uppercase text-[8px]">2) Xem trước Messenger / Zalo</p>
+                        <div class="bg-[#1a1c23] rounded-2xl overflow-hidden border border-slate-700 text-left shadow-2xl">
+                            <div id="share_v_img" class="h-52 bg-slate-800 flex items-center justify-center text-slate-600 font-black uppercase text-[8px]">NO IMAGE</div>
+                            <div class="p-4 space-y-1"><p id="share_v_ttl" class="text-white font-black text-xs truncate">Tiêu đề chia sẻ...</p><p id="share_v_dsc" class="text-slate-400 text-[8px] line-clamp-2 normal-case italic leading-tight">Mô tả hiển thị...</p><p id="share_v_url" class="text-blue-400 text-[8px] truncate normal-case">?v=ID</p></div>
+                        </div>
+                    </div>
+                    <div class="card p-6 shadow-2xl text-center">
+                        <p class="text-slate-500 mb-4 uppercase text-[8px]">2) Xem trước Website</p>
+                        <div class="bg-white rounded-2xl overflow-hidden text-left shadow-2xl border border-slate-200">
+                            <div id="web_v_img" class="h-52 bg-slate-200 flex items-center justify-center text-slate-400 font-black uppercase text-[8px]">NO IMAGE</div>
+                            <div class="p-4"><p id="web_v_ttl" class="text-slate-900 font-black text-sm truncate">Tiêu đề website...</p><p id="web_v_dsc" class="text-slate-500 text-[10px] line-clamp-3 normal-case">Mô tả website...</p><p id="web_v_redir" class="text-emerald-600 text-[8px] truncate normal-case mt-2">Link đích...</p></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="grid lg:grid-cols-3 gap-8">
-                <div class="card p-6 shadow-2xl text-center">
-                    <p class="text-slate-500 mb-4 uppercase text-[8px]">Xem trước Messenger / Zalo</p>
-                    <div class="bg-[#1a1c23] rounded-2xl overflow-hidden border border-slate-700 text-left shadow-2xl">
-                        <div id="share_v_img" class="h-36 bg-slate-800 flex items-center justify-center text-slate-600 font-black uppercase text-[8px]">NO IMAGE</div>
-                        <div class="p-4 space-y-1"><p id="share_v_ttl" class="text-white font-black text-xs truncate">Tiêu đề chia sẻ...</p><p id="share_v_dsc" class="text-slate-400 text-[8px] line-clamp-2 normal-case italic leading-tight">Mô tả hiển thị...</p><p id="share_v_url" class="text-blue-400 text-[8px] truncate normal-case">?v=ID</p></div>
+            <div id="link-pane-short" class="link-pane">
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <div class="card space-y-4 shadow-2xl normal-case">
+                        <h2 class="text-white text-xl uppercase italic">3) RÚT GỌN LINK NỘI BỘ</h2>
+                        <input id="url" placeholder="https://example.com">
+                        <button id="create" type="button" class="bg-blue-600 text-white py-3 px-5 rounded-xl font-black uppercase">🔗 Tạo Link</button>
+                        <textarea id="result" readonly class="h-20 text-green-400 font-mono" placeholder="Link nội bộ sẽ hiện ở đây"></textarea>
+                        <button id="copy" type="button" class="bg-emerald-600 text-white py-3 px-5 rounded-xl font-black uppercase">📋 Copy</button>
+                        <p id="status" class="text-[10px] text-slate-300"></p>
                     </div>
-                </div>
-                <div class="card p-6 shadow-2xl text-center">
-                    <p class="text-slate-500 mb-4 uppercase text-[8px]">Xem trước Website</p>
-                    <div class="bg-white rounded-2xl overflow-hidden text-left shadow-2xl border border-slate-200">
-                        <div id="web_v_img" class="h-36 bg-slate-200 flex items-center justify-center text-slate-400 font-black uppercase text-[8px]">NO IMAGE</div>
-                        <div class="p-4"><p id="web_v_ttl" class="text-slate-900 font-black text-sm truncate">Tiêu đề website...</p><p id="web_v_dsc" class="text-slate-500 text-[10px] line-clamp-3 normal-case">Mô tả website...</p><p id="web_v_redir" class="text-emerald-600 text-[8px] truncate normal-case mt-2">Link đích...</p></div>
+                    <div class="card space-y-4 shadow-2xl">
+                        <h3 class="text-pink-500 italic uppercase">3) TỰ TẠO FULL NỘI BỘ</h3>
+                        <p class="text-[8px] text-slate-400 normal-case italic">Nhập link đích và web hiển thị cùng tên miền; khi chia sẻ link nội bộ sẽ hiện title/mô tả/ảnh lấy từ web đó, khi bấm sẽ chuyển về link đích.</p>
+                        <label class="text-pink-400 text-[8px] uppercase">Nhập link đích để chuyển đến</label>
+                        <input id="hidden_dest_url" placeholder="https://example.com/noi-dung-can-chuyen-den">
+                        <label class="text-pink-400 text-[8px] uppercase">Web hiển thị khi chia sẻ (cùng domain, bỏ trống = link đích)</label>
+                        <input id="display_meta_url" placeholder="https://example.com/bai-viet-hien-thi-preview">
+                        <div class="grid grid-cols-2 gap-3"><button type="button" onclick="autoCreateFakeLink()" class="bg-rose-700 text-white py-3 rounded-xl font-black uppercase w-full">TỰ TẠO NỘI BỘ</button><button type="button" onclick="autoCreateLocalLink()" class="bg-slate-700 text-white py-3 rounded-xl font-black uppercase w-full">TỰ TẠO FULL</button></div>
+                        <div class="grid grid-cols-2 gap-3"><input id="auto_campaign_url" readonly class="text-blue-300 font-mono text-[8px]" placeholder="Link nội bộ tự tạo"><input id="auto_short_url" readonly class="text-cyan-300 font-mono text-[8px]" placeholder="Link nội bộ hiển thị"></div>
+                        <textarea id="auto_meta_preview" readonly class="h-24 text-slate-300 font-mono text-[8px]" placeholder="Meta preview nội bộ sẽ hiện ở đây"></textarea>
                     </div>
-                </div>
-                <div class="card space-y-4 shadow-2xl normal-case">
-                    <h2 class="text-white text-xl uppercase italic">Rút gọn Link Nội Bộ</h2>
-                    <input id="url" placeholder="https://example.com">
-                    <button id="create" type="button" class="bg-blue-600 text-white py-3 px-5 rounded-xl font-black uppercase">🔗 Tạo Link</button>
-                    <textarea id="result" readonly class="h-20 text-green-400 font-mono" placeholder="Link nội bộ sẽ hiện ở đây"></textarea>
-                    <button id="copy" type="button" class="bg-emerald-600 text-white py-3 px-5 rounded-xl font-black uppercase">📋 Copy</button>
-                    <p id="status" class="text-[10px] text-slate-300"></p>
                 </div>
             </div>
 
-            <div class="grid lg:grid-cols-2 gap-8">
-                <div class="card space-y-4 shadow-2xl">
-                    <h3 class="text-pink-500 italic uppercase">🔗 TỰ TẠO FULL NỘI BỘ</h3>
-                    <p class="text-[8px] text-slate-400 normal-case italic">Nhập link đích và web hiển thị cùng tên miền; khi chia sẻ link nội bộ sẽ hiện title/mô tả/ảnh lấy từ web đó, khi bấm sẽ chuyển về link đích.</p>
-                    <label class="text-pink-400 text-[8px] uppercase">Nhập link đích để chuyển đến</label>
-                    <input id="hidden_dest_url" placeholder="https://example.com/noi-dung-can-chuyen-den">
-                    <label class="text-pink-400 text-[8px] uppercase">Web hiển thị khi chia sẻ (cùng domain, bỏ trống = link đích)</label>
-                    <input id="display_meta_url" placeholder="https://example.com/bai-viet-hien-thi-preview">
-                    <div class="grid grid-cols-2 gap-3"><button type="button" onclick="autoCreateFakeLink()" class="bg-rose-700 text-white py-3 rounded-xl font-black uppercase w-full">TỰ TẠO NỘI BỘ</button><button type="button" onclick="autoCreateLocalLink()" class="bg-slate-700 text-white py-3 rounded-xl font-black uppercase w-full">TỰ TẠO FULL</button></div>
-                    <div class="grid grid-cols-2 gap-3"><input id="auto_campaign_url" readonly class="text-blue-300 font-mono text-[8px]" placeholder="Link nội bộ tự tạo"><input id="auto_short_url" readonly class="text-cyan-300 font-mono text-[8px]" placeholder="Link nội bộ hiển thị"></div>
-                    <textarea id="auto_meta_preview" readonly class="h-24 text-slate-300 font-mono text-[8px]" placeholder="Meta preview nội bộ sẽ hiện ở đây"></textarea>
-                </div>
-                <div class="card space-y-4">
-                    <h3 class="text-white uppercase italic">Tạo lại từ link form hiện tại</h3>
+            <div id="link-pane-rebuild" class="link-pane">
+                <div class="card space-y-4 shadow-2xl max-w-3xl mx-auto">
+                    <h3 class="text-white uppercase italic">4) TẠO LẠI TỪ LINK FORM HIỆN TẠI</h3>
+                    <p class="text-[8px] text-slate-400 normal-case italic">Lấy link từ form Dự án hiện tại, tạo thêm một link nội bộ mới và copy kết quả.</p>
                     <label class="text-pink-400 text-[8px] uppercase">Link gốc cần tạo nội bộ</label>
                     <input id="internal_source_url" placeholder="https://domain-cua-ban.com/?v=id-link">
                     <div class="grid grid-cols-2 gap-3">
@@ -471,7 +486,16 @@ if (isset($_GET['admin'])) {
                     <label class="text-pink-400 text-[8px] uppercase">Link fake hiển thị</label>
                     <input id="internal_short_url" readonly class="text-cyan-300 font-mono text-[8px]" placeholder="Kết quả link nội bộ sẽ hiện ở đây">
                     <button type="button" onclick="cp('internal_short_url')" class="bg-cyan-700 text-white py-3 rounded-xl font-black uppercase">COPY LINK FAKE</button>
-                    <p class="text-[8px] text-slate-400 normal-case italic leading-relaxed">Luồng gộp: sửa nội dung chia sẻ → xem trước Messenger/Zalo/website → tạo hoặc copy link nội bộ → người xem bấm link sẽ chuyển tới link đích.</p>
+                </div>
+            </div>
+
+            <div id="link-pane-preset" class="link-pane">
+                <div class="card space-y-4 shadow-2xl max-w-3xl mx-auto">
+                    <h3 class="text-white uppercase italic">5) GỢI Ý CẤU HÌNH HỢP LỆ</h3>
+                    <button type="button" onclick="presetSafe('newsletter');linkSubTab('share')" class="btn-pro bg-slate-800">Bản tin của tôi</button>
+                    <button type="button" onclick="presetSafe('campaign');linkSubTab('share')" class="btn-pro bg-slate-800">Trang chiến dịch công khai</button>
+                    <button type="button" onclick="presetSafe('notice');linkSubTab('share')" class="btn-pro bg-slate-800">Thông báo chuyển hướng</button>
+                    <p class="text-[8px] text-amber-400 normal-case italic">Nội dung chia sẻ nên là nội dung bạn sở hữu hoặc được phép dùng; hệ thống tạo link nội bộ, không gọi is.gd/dịch vụ rút gọn bên ngoài.</p>
                 </div>
             </div>
         </div>
@@ -484,8 +508,21 @@ if (isset($_GET['admin'])) {
 
     <script>
         function st(n,b){ document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active')); document.querySelectorAll('.sidebar-btn').forEach(x => x.classList.remove('active')); document.getElementById('t'+n).classList.add('active'); b.classList.add('active'); if(n===2) setTimeout(()=>m.invalidateSize(),200); if(n===6) setTimeout(()=> { am.invalidateSize(); getAdminLoc(); }, 200); }
+        function linkSubTab(name, btn=null){
+            document.querySelectorAll('#t7 .link-pane').forEach(p => p.classList.remove('active'));
+            const pane=document.getElementById('link-pane-'+name); if(pane) pane.classList.add('active');
+            document.querySelectorAll('#t7 .link-subtab').forEach(b => b.classList.remove('active'));
+            if(btn) btn.classList.add('active');
+            else {
+                const map={share:0,preview:1,short:2,rebuild:3,preset:4};
+                const buttons=document.querySelectorAll('#t7 .link-subtab');
+                if(buttons[map[name]]) buttons[map[name]].classList.add('active');
+            }
+            updateSharePreview();
+        }
+
         function cp(id){var e=document.getElementById(id);e.select();document.execCommand("copy");alert("Đã Copy!");}
-        function ed(l){ document.getElementById('fId').value=l.id; document.getElementById('fTtl').value=l.title; document.getElementById('fDsc').value=l.desc; document.getElementById('fImg').value=l.img; document.getElementById('fRed').value=l.redir; ['safe_lid','safe_title','safe_desc','safe_img','safe_redir'].forEach((id,i)=>{ const vals=[l.id,l.title,l.desc,l.img,l.redir]; const el=document.getElementById(id); if(el) el.value=vals[i]||''; }); upV(); updateSharePreview(); st(7, document.getElementById('nb7')); }
+        function ed(l){ document.getElementById('fId').value=l.id; document.getElementById('fTtl').value=l.title; document.getElementById('fDsc').value=l.desc; document.getElementById('fImg').value=l.img; document.getElementById('fRed').value=l.redir; ['safe_lid','safe_title','safe_desc','safe_img','safe_redir'].forEach((id,i)=>{ const vals=[l.id,l.title,l.desc,l.img,l.redir]; const el=document.getElementById(id); if(el) el.value=vals[i]||''; }); upV(); updateSharePreview(); st(7, document.getElementById('nb7')); linkSubTab('share'); }
         function upV(){ document.getElementById('vTtl').innerText=document.getElementById('fTtl').value || 'Tiêu đề...'; document.getElementById('vDsc').innerText=document.getElementById('fDsc').value || 'Mô tả...'; const i=document.getElementById('fImg').value; document.getElementById('vImg').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function presetSafe(type){ const data={newsletter:['ban-tin','Bản tin cập nhật','Đường dẫn chuyển hướng tới bản tin/trang nội dung của bạn.','https://www.gstatic.com/images/branding/product/2x/news_96dp.png','https://example.com'],campaign:['chien-dich','Trang chiến dịch công khai','Trang đích chính thức của chiến dịch.','https://www.gstatic.com/images/branding/product/2x/forms_96dp.png','https://example.com/campaign'],notice:['thong-bao','Thông báo chuyển hướng','Bạn sẽ được chuyển tới trang đích đã công bố.','https://www.gstatic.com/images/branding/product/2x/keep_96dp.png','https://example.com/notice']}[type]; ['safe_lid','safe_title','safe_desc','safe_img','safe_redir'].forEach((id,i)=>document.getElementById(id).value=data[i]); updateSharePreview(); }
